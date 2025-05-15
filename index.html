@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Neo4j Network Graph</title>
+  <script src="https://unpkg.com/neovis.js@2.0.2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
+    }
+    h2 {
+      text-align: center;
+      padding: 1rem;
+      background: #0b7285;
+      color: white;
+      margin: 0;
+    }
+    #controls {
+      padding: 1rem;
+      background: #e3fafc;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    #cypherInput {
+      width: 70%;
+      padding: 0.5rem;
+      font-size: 1rem;
+    }
+    #runQuery {
+      padding: 0.5rem 1rem;
+      background: #0b7285;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    #legend {
+      padding: 1rem;
+      background: #fff;
+      border-top: 2px solid #ccc;
+      font-size: 0.9rem;
+    }
+    #viz {
+      width: 100%;
+      height: 80vh;
+      border-top: 2px solid #ccc;
+      position: relative;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.2rem;
+      color: #0b7285;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Neo4j Aura: Telecom Gaming Network</h2>
+
+<div id="controls">
+  <input type="text" id="cypherInput" placeholder="Enter Cypher query..." />
+  <button id="runQuery">Run Query</button>
+</div>
+
+<div id="viz">
+  <div id="loading">Loading graph...</div>
+</div>
+
+<div id="legend">
+  <strong>Legend:</strong><br />
+  <span style="color: #1f77b4;">● UserEquipment</span> |
+  <span style="color: #ff7f0e;">● gNodeB</span> |
+  <span style="color: #2ca02c;">● UPF</span> |
+  <span style="color: #d62728;">● GSC</span> |
+  <span style="color: #9467bd;">● GameStream</span>
+</div>
+
+<script>
+  let viz;
+
+  const config = {
+  containerId: "viz",
+  neo4j: {
+    serverUrl: "neo4j://44bb5bca.databases.neo4j.io",
+    serverUser: "neo4j",
+    serverPassword: "qeBs7NpBR7LILa5bajN5cDVPT-lCJzwJJyrSwQbYrWg",
+    driverConfig: {
+      encrypted: "ENCRYPTION_ON",
+      trust: "TRUST_SYSTEM_CA_SIGNED_CERTIFICATES"
+    }
+  },
+  labels: {
+    UserEquipment: {
+      caption: "name",
+      size: "noOfGames",
+      titleProperties: ["planName", "gameClass", "location", "subscription"],
+      color: "#1f77b4"
+    },
+    gNodeB: {
+      caption: "name",
+      size: "activeGamingSession",
+      titleProperties: ["siteOwner", "noOfSliceSupported"],
+      color: "#ff7f0e"
+    },
+    UPF: {
+      caption: "name",
+      size: "activeGamingSession",
+      titleProperties: ["siteType", "noOfSession"],
+      color: "#2ca02c"
+    },
+    GSC: {
+      caption: "name",
+      size: "activeGamingSession",
+      titleProperties: ["siteOwner", "noOfGames", "downstreamSpeed"],
+      color: "#d62728"
+    },
+    GameStream: {
+      caption: "name",
+      size: "noOfStreams",
+      titleProperties: ["gameEngine", "serverType", "os"],
+      color: "#9467bd"
+    }
+  },
+  relationships: {
+    CONNECTS: {
+      caption: "bandwidth",
+      titleProperties: ["bandwidth", "interface"]
+    }
+  },
+  initialCypher: "MATCH p=(n)-[r:CONNECTS]->(m) RETURN p LIMIT 200"
+};
+
+  function renderGraph(query) {
+    document.getElementById("loading").style.display = "block";
+    if (viz) viz.clearNetwork();
+    config.initialCypher = query;
+    viz = new NeoVis.default(config);
+    viz.render();
+    setTimeout(() => {
+      document.getElementById("loading").style.display = "none";
+    }, 2000); // Adjust based on expected load time
+  }
+
+  document.getElementById("runQuery").addEventListener("click", () => {
+    const query = document.getElementById("cypherInput").value;
+    if (query.trim()) {
+      renderGraph(query);
+    }
+  });
+
+  // Initial render
+  renderGraph(config.initialCypher);
+</script>
+
+</body>
+</html>
