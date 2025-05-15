@@ -76,23 +76,21 @@
 
 <div id="legend">
   <strong>Legend:</strong><br />
-  <span style="color: #1f77b4;">● UserEquipment</span> |
-  <span style="color: #ff7f0e;">● gNodeB</span> |
-  <span style="color: #2ca02c;">● UPF</span> |
-  <span style="color: #d62728;">● GSC</span> |
-  <span style="color: #9467bd;">● GameStream</span>
+  <span style="color: #f39c12;">● UserEquipment</span> |
+  <span style="color: #2980b9;">● gNodeB</span> |
+  <span style="color: #27ae60;">● UPF</span> |
+  <span style="color: #9b59b6;">● GSC</span> |
+  <span style="color: #e74c3c;">● GameStream</span>
 </div>
 
 <script>
-  const config = {
+  const configTemplate = {
     containerId: "viz",
     neo4j: {
-      serverUrl: "neo4j://44bb5bca.databases.neo4j.io",
-    serverUser: "neo4j",
-    serverPassword: "qeBs7NpBR7LILa5bajN5cDVPT-lCJzwJJyrSwQbYrWg",
-    driverConfig: {
-      encrypted: "ENCRYPTION_ON",
-      trust: "TRUST_SYSTEM_CA_SIGNED_CERTIFICATES"
+      serverUrl: "neo4j+s://44bb5bca.databases.neo4j.io",
+      serverUser: "neo4j",
+      serverPassword: "qeBs7NpBR7LILa5bajN5cDVPT-lCJzwJJyrSwQbYrWg"
+      // No driverConfig needed for Aura + neo4j+s://
     },
     visConfig: {
       nodes: {
@@ -118,9 +116,7 @@
           gravitationalConstant: -5000,
           springLength: 100
         },
-        stabilization: {
-          iterations: 150
-        }
+        stabilization: { iterations: 150 }
       }
     },
     labels: {
@@ -137,18 +133,45 @@
         color: "#34495e"
       }
     },
-    initialCypher: "MATCH p=(n)-[r:CONNECTS]->(m) RETURN p"
+    initialCypher: "MATCH p=()-[r:CONNECTS]->() RETURN p"
   };
 
-  const viz = new NeoVis.default(config);
-  viz.render();
+  let viz;
 
-  // Auto-zoom to fit the whole graph
-  setTimeout(() => {
-    if (viz && viz._network) {
-      viz._network.fit({ animation: true });
+  function renderGraph(cypher) {
+    document.getElementById("loading").style.display = "block";
+
+    if (viz) {
+      viz.clearNetwork();
     }
-  }, 1500);
+
+    const config = JSON.parse(JSON.stringify(configTemplate));
+    if (cypher) {
+      config.initialCypher = cypher;
+    }
+
+    viz = new NeoVis.default(config);
+    viz.render();
+
+    // Hide loading when done
+    viz.registerOnEvent("completed", () => {
+      document.getElementById("loading").style.display = "none";
+      // Auto-fit graph
+      viz._network.fit({ animation: true });
+    });
+  }
+
+  document.getElementById("runQuery").addEventListener("click", () => {
+    const cypher = document.getElementById("cypherInput").value.trim();
+    if (cypher) {
+      renderGraph(cypher);
+    } else {
+      alert("Please enter a Cypher query.");
+    }
+  });
+
+  // Initial render with default query
+  renderGraph();
 </script>
 
 </body>
