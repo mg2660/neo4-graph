@@ -84,80 +84,68 @@
 </div>
 
 <script>
-  let viz;
-
   const config = {
-  containerId: "viz",
-  neo4j: {
-    serverUrl: "neo4j://44bb5bca.databases.neo4j.io",
-    serverUser: "neo4j",
-    serverPassword: "qeBs7NpBR7LILa5bajN5cDVPT-lCJzwJJyrSwQbYrWg",
-    driverConfig: {
-      encrypted: "ENCRYPTION_ON",
-      trust: "TRUST_SYSTEM_CA_SIGNED_CERTIFICATES"
-    }
-  },
-  labels: {
-    UserEquipment: {
-      caption: "name",
-      size: "noOfGames",
-      titleProperties: ["planName", "gameClass", "location", "subscription"],
-      color: "#1f77b4"
+    containerId: "viz",
+    neo4j: {
+      serverUrl: "neo4j+s://YOUR_INSTANCE_ID.databases.neo4j.io",
+      serverUser: "neo4j",
+      serverPassword: "YOUR_PASSWORD"
     },
-    gNodeB: {
-      caption: "name",
-      size: "activeGamingSession",
-      titleProperties: ["siteOwner", "noOfSliceSupported"],
-      color: "#ff7f0e"
+    visConfig: {
+      nodes: {
+        shape: "dot",
+        scaling: { min: 20, max: 60 },
+        font: {
+          size: 20,
+          color: "#111",
+          face: "Arial",
+          strokeWidth: 3,
+          strokeColor: "#fff"
+        }
+      },
+      edges: {
+        font: { size: 14, align: "middle", color: "#444" },
+        arrows: { to: { enabled: true, scaleFactor: 1 } },
+        color: { color: "#777", highlight: "#000" },
+        scaling: { min: 1, max: 5 }
+      },
+      physics: {
+        enabled: true,
+        barnesHut: {
+          gravitationalConstant: -5000,
+          springLength: 100
+        },
+        stabilization: {
+          iterations: 150
+        }
+      }
     },
-    UPF: {
-      caption: "name",
-      size: "activeGamingSession",
-      titleProperties: ["siteType", "noOfSession"],
-      color: "#2ca02c"
+    labels: {
+      UserEquipment: { caption: "name", size: "noOfGames", color: "#f39c12" },
+      gNodeB: { caption: "name", size: "activeGamingSession", color: "#2980b9" },
+      UPF: { caption: "name", size: "activeGamingSession", color: "#27ae60" },
+      GSC: { caption: "name", size: "activeGamingSession", color: "#9b59b6" },
+      GameStream: { caption: "name", size: "noOfStreams", color: "#e74c3c" }
     },
-    GSC: {
-      caption: "name",
-      size: "activeGamingSession",
-      titleProperties: ["siteOwner", "noOfGames", "downstreamSpeed"],
-      color: "#d62728"
+    relationships: {
+      CONNECTS: {
+        caption: true,
+        thickness: "bandwidth",
+        color: "#34495e"
+      }
     },
-    GameStream: {
-      caption: "name",
-      size: "noOfStreams",
-      titleProperties: ["gameEngine", "serverType", "os"],
-      color: "#9467bd"
-    }
-  },
-  relationships: {
-    CONNECTS: {
-      caption: "bandwidth",
-      titleProperties: ["bandwidth", "interface"]
-    }
-  },
-  initialCypher: "MATCH p=(n)-[r:CONNECTS]->(m) RETURN p LIMIT 200"
-};
+    initialCypher: "MATCH p=(n)-[r:CONNECTS]->(m) RETURN p"
+  };
 
-  function renderGraph(query) {
-    document.getElementById("loading").style.display = "block";
-    if (viz) viz.clearNetwork();
-    config.initialCypher = query;
-    viz = new NeoVis.default(config);
-    viz.render();
-    setTimeout(() => {
-      document.getElementById("loading").style.display = "none";
-    }, 2000); // Adjust based on expected load time
-  }
+  const viz = new NeoVis.default(config);
+  viz.render();
 
-  document.getElementById("runQuery").addEventListener("click", () => {
-    const query = document.getElementById("cypherInput").value;
-    if (query.trim()) {
-      renderGraph(query);
+  // Auto-zoom to fit the whole graph
+  setTimeout(() => {
+    if (viz && viz._network) {
+      viz._network.fit({ animation: true });
     }
-  });
-
-  // Initial render
-  renderGraph(config.initialCypher);
+  }, 1500);
 </script>
 
 </body>
