@@ -88,17 +88,23 @@
         stabilization: { iterations: 150 }
       }
     },
-    labels: {
-      UserEquipment: { caption: "name", size: "noOfGames", color: "#f39c12" },
-      gNodeB: { caption: "name", size: "activeGamingSession", color: "#2980b9" },
-      UPF: { caption: "name", size: "activeGamingSession", color: "#27ae60" },
-      GSC: { caption: "name", size: "activeGamingSession", color: "#9b59b6" },
-      GameStream: { caption: "name", size: "noOfStreams", color: "#e74c3c" }
-    },
-    relationships: {
-      CONNECTS: { caption: true, thickness: "bandwidth", color: "#34495e" }
-    },
-    initialCypher: "MATCH p=()-[r:CONNECTS]->() RETURN p"
+   labels: {
+  UserEquipment: { caption: "name", size: "noOfGames", color: "#f39c12" },
+  gNodeB: { caption: "name", size: "activeGamingSession", color: "#2980b9" },
+  UPF: { caption: "name", size: "activeGamingSession", color: "#27ae60" },
+  GSC: { caption: "name", size: "activeGamingSession", color: "#9b59b6" },
+  GameStream: { caption: "name", size: "noOfStreams", color: "#e74c3c" },
+  Router: { caption: "name", color: "#16a085" },
+  Path: { caption: "name", color: "#7f8c8d" },
+  Users: { caption: "name", color: "#d35400" },
+  GameServer: { caption: "name", color: "#8e44ad" }
+},
+relationships: {
+  CONNECTS: { caption: true, thickness: "bandwidth", color: "#34495e" },
+  CONNECTED: { caption: true, thickness: "bandwidth", color: "#2c3e50" },
+  USING: { caption: true, thickness: "bandwidth", color: "#8e44ad" }
+},
+    initialCypher: "MATCH p=()-[r]->() RETURN p"
   };
 
   let viz;
