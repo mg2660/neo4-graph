@@ -119,10 +119,13 @@ relationships: {
 
     viz = new NeoVis.default(config);
     viz.render();
-
-    viz.registerOnEvent("completed", () => {
-      viz._network.fit({ animation: true });
-    });
+    
+viz.registerOnEvent("completed", () => {
+  console.log("Network object:", viz._network);
+  if (viz._network) {
+    viz._network.fit({ animation: true });
+  }
+});
   }
 
   document.getElementById("runQuery").addEventListener("click", () => {
