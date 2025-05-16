@@ -120,12 +120,16 @@ relationships: {
 
     viz = new NeoVis.default(config);
     viz.render();
-viz.registerOnEvent("completed", () => {
-  const network = viz.getNetwork();
-  if (network) {
-    network.fit({ animation: true });
-  }
+    viz.registerOnEvent("completed", () => {
+  console.log("Rendering completed.");
+  console.log("Raw data:", viz._data);
 });
+// viz.registerOnEvent("completed", () => {
+//   const network = viz.getNetwork();
+//   if (network) {
+//     network.fit({ animation: true });
+//   }
+// });
   }
 
   document.getElementById("runQuery").addEventListener("click", () => {
