@@ -1,145 +1,142 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Neo4j Aura Graph Viewer</title>
-  <script src="https://unpkg.com/neovis.js@2.0.2"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Graph Visualization</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0; padding: 0;
-      background: #f9f9f9;
-    }
-    h2 {
-      text-align: center;
-      padding: 1rem;
-      background: #0b7285;
-      color: white;
-      margin: 0;
-    }
-    #controls {
-      padding: 1rem;
-      background: #e3fafc;
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    #cypherInput {
-      width: 60%;
-      min-width: 300px;
-      padding: 0.5rem;
-      font-size: 1rem;
-    }
-    #runQuery {
-      padding: 0.5rem 1.5rem;
-      background: #0b7285;
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-    #viz {
-      width: 100%;
-      height: 80vh;
-      border-top: 2px solid #ccc;
-      position: relative;
-    }
+    .node { fill: #69b3a2; }
+    .link { stroke: #999; stroke-opacity: 0.6; }
   </style>
 </head>
 <body>
-
-<h2>Neo4j Aura Graph Viewer</h2>
-
-<div id="controls">
-  <input type="text" id="cypherInput" placeholder="Enter Cypher query (or leave empty for default)" />
-  <button id="runQuery">Run Query</button>
-</div>
-
-<div id="viz"></div>
+  <!-- <svg {
+  border: 1px solid #ccc;
+  width: 100%;
+  height: 100vh; 
+}
+></svg> -->
+<svg id="graph" style="width: 100vw; height: 100vh;"></svg>
 
 <script>
-  const configTemplate = {
-    containerId: "viz",
-    neo4j: {
-      serverUrl: "neo4j://44bb5bca.databases.neo4j.io", // Non-encrypted URL
-      serverUser: "neo4j",
-      serverPassword: "qeBs7NpBR7LILa5bajN5cDVPT-lCJzwJJyrSwQbYrWg",
-      driverConfig: {
-        encrypted: "ENCRYPTION_ON",
-        trust: "TRUST_SYSTEM_CA_SIGNED_CERTIFICATES"
-      }
-    },
-    visConfig: {
-      nodes: {
-        shape: "dot",
-        scaling: { min: 20, max: 60 },
-        font: { size: 18, color: "#111", face: "Arial", strokeWidth: 2, strokeColor: "#fff" }
-      },
-      edges: {
-        font: { size: 14, align: "middle", color: "#444" },
-        arrows: { to: { enabled: true, scaleFactor: 1 } },
-        color: { color: "#777", highlight: "#000" },
-        scaling: { min: 1, max: 5 }
-      },
-      physics: {
-        enabled: true,
-        barnesHut: { gravitationalConstant: -5000, springLength: 100 },
-        stabilization: { iterations: 150 }
-      }
-    },
-  
-labels: {
-  Router: { color: "#16a085" },
-  Path: { color: "#7f8c8d" },
-  Users: { color: "#d35400" },
-  GameServer: { color: "#8e44ad" },
-  UserEquipment: { color: "#f39c12" },
-  gNodeB: { color: "#2980b9" },
-  UPF: { color: "#27ae60" },
-  GSC: { color: "#9b59b6" },
-  GameStream: { color: "#e74c3c" }
-},
-relationships: {
-  CONNECTS: { caption: true, thickness: "bandwidth", color: "#34495e" },
-  CONNECTED: { caption: true, thickness: "bandwidth", color: "#2c3e50" },
-  USING: { caption: true, thickness: "bandwidth", color: "#8e44ad" }
-},
-    initialCypher: "MATCH p=()-[r:CONNECTS|CONNECTED|USING]->() RETURN p"
-  };
-
-  let viz;
-
-  function renderGraph(cypher) {
-    if (viz) viz.clearNetwork();
-
-    const config = JSON.parse(JSON.stringify(configTemplate));
-    if (cypher && cypher.trim() !== "") {
-      config.initialCypher = cypher;
-    }
-
-    viz = new NeoVis.default(config);
-    viz.render();
-    viz.registerOnEvent("completed", () => {
-  console.log("Rendering completed.");
-  console.log("Raw data:", viz._data);
-});
-// viz.registerOnEvent("completed", () => {
-//   const network = viz.getNetwork();
-//   if (network) {
-//     network.fit({ animation: true });
-//   }
-// });
-  }
-
-  document.getElementById("runQuery").addEventListener("click", () => {
-    const cypher = document.getElementById("cypherInput").value;
-    renderGraph(cypher);
+d3.json("http://localhost:3000/api/graph").then(graph => {
+  const nodesSet = new Set();
+  graph.forEach(link => {
+    nodesSet.add(link.source);
+    nodesSet.add(link.target);
   });
 
-  // Initial render
-  renderGraph();
+  const nodes = Array.from(nodesSet).map(id => ({ id }));
+  const links = graph.map(link => ({
+    source: link.source,
+    target: link.target,
+    relationship: link.relationship
+  }));
+
+  const svg = d3.select("svg"),
+        width = +svg.attr("width"),
+        height = +svg.attr("height");
+
+  // Zoom and pan setup
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 4])
+    .on("zoom", (event) => {
+      container.attr("transform", event.transform);
+    });
+  svg.call(zoom);
+
+  // All content inside this container will zoom/pan
+  const container = svg.append("g");
+
+  const link = container.append("g")
+      .attr("class", "links")
+    .selectAll("line")
+    .data(links)
+    .enter().append("line")
+      .attr("class", "link")
+      .style("stroke", "#aaa");
+
+  const linkLabels = container.append("g")
+      .attr("class", "link-labels")
+    .selectAll("text")
+    .data(links)
+    .enter().append("text")
+      .attr("dy", ".35em")
+      .attr("text-anchor", "middle")
+      .style("font-size", "10px")
+      .style("fill", "#555")
+      .text(d => d.relationship);
+
+  const node = container.append("g")
+      .attr("class", "nodes")
+    .selectAll("circle")
+    .data(nodes)
+    .enter().append("circle")
+      .attr("class", "node")
+      .attr("r", 6)
+      .style("fill", "#69b3a2")
+      .call(d3.drag()
+          .on("start", dragstarted)
+          .on("drag", dragged)
+          .on("end", dragended));
+
+  const labels = container.append("g")
+      .attr("class", "labels")
+    .selectAll("text")
+    .data(nodes)
+    .enter().append("text")
+      .attr("dy", -10)
+      .attr("text-anchor", "middle")
+      .text(d => d.id)
+      .style("font-size", "10px")
+      .style("fill", "#333");
+
+  const simulation = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+      .force("charge", d3.forceManyBody().strength(-300))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .on("tick", ticked);
+
+  function ticked() {
+    link
+        .attr("x1", d => d.source.x)
+        .attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x)
+        .attr("y2", d => d.target.y);
+
+    node
+        .attr("cx", d => d.x)
+        .attr("cy", d => d.y);
+
+    labels
+        .attr("x", d => d.x)
+        .attr("y", d => d.y);
+
+    linkLabels
+        .attr("x", d => (d.source.x + d.target.x) / 2)
+        .attr("y", d => (d.source.y + d.target.y) / 2);
+  }
+
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+  }
+
+  function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+  }
+
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+  }
+});
 </script>
+
 
 </body>
 </html>
