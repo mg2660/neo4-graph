@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Graph Latency Path Finder</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #0f0;
+    }
+    .node {
+      stroke: #fff;
+      stroke-width: 1.5px;
+    }
+    .link {
+      stroke-width: 2;
+    }
+    .tooltip {
+      position: absolute;
+      background: #111;
+      border: 1px solid #0f0;
+      padding: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      color: #0f0;
+    }
+    .labels text {
+      paint-order: stroke;
+      stroke: black;
+      stroke-width: 2px;
+      fill: #0f0;
+    }
+  </style>
+</head>
+<body>
+
+<svg id="graph" style="width: 100vw; height: 100vh;"></svg>
+<div id="tooltip" class="tooltip" style="display: none;"></div>
+<div id="path-controls" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0;">
+  <label style="color:#0f0;">From:</label>
+  <input id="source-node" type="text" placeholder="e.g. Eve" />
+  <label style="color:#0f0; margin-left: 10px;">To:</label>
+  <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
+  <button id="find-path" style="margin-left: 10px;">Find Lowest Latency</button>
+  <button id="reset-path" style="margin-left: 10px;">Reset</button>
+</div>
+<div id="path-result" style="position: absolute; top: 70px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0; color:#0f0; max-width: 400px;"></div>
+
+<script>
+d3.json("http://localhost:3000/api/graph").then(data => {
+  const nodes = data.nodes;
+  const links = data.links;
+
+  const svg = d3.select("svg");
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const tooltip = d3.select("#tooltip");
+  const container = svg.append("g");
+  const zoom = d3.zoom().scaleExtent([0.1, 4]).on("zoom", event => container.attr("transform", event.transform));
+  svg.call(zoom);
+
+  const getNodeColor = node => {
+    const status = node.properties?.alarm_status;
+    if (status === "RED") return "#ff0000";
+    if (status === "AMBER") return "#ffbf00";
+    return "#0f0";
+  };
+
+  const link = container.append("g").attr("class", "links")
+    .selectAll("line")
+    .data(links)
+    .enter().append("line")
+    .attr("class", "link")
+    .style("stroke-width", 2)
+    .style("stroke", d => {
+      const statusA = d.source.properties?.alarm_status;
+      const statusB = d.target.properties?.alarm_status;
+      if (statusA === "RED" || statusB === "RED") return "#ff0000";
+      if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
+      return "#0f0";
+    })
+    .on("mouseover", (event, d) => {
+      tooltip.style("display", "block")
+        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+        .html(`<strong>Link</strong><br>
+               Type: ${d.type}<br>
+               Source: ${d.source.id}<br>
+               Target: ${d.target.id}<br>
+               ${Object.entries(d.properties || {})
+                 .map(([k, v]) => `${k}: ${v}`).join("<br>")}`);
+    })
+    .on("mouseout", () => tooltip.style("display", "none"));
+
+  const node = container.append("g").attr("class", "nodes")
+    .selectAll("circle")
+    .data(nodes)
+    .enter().append("circle")
+    .attr("r", 12)
+    .attr("fill", d => getNodeColor(d))
+    .attr("class", "node")
+    .call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended))
+    .on("mouseover", (event, d) => {
+      tooltip.style("display", "block")
+        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+        .html(`<strong>${d.id}</strong><br>${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
+    })
+    .on("mouseout", () => tooltip.style("display", "none"));
+
+  const labels = container.append("g").attr("class", "labels")
+    .selectAll("text")
+    .data(nodes)
+    .enter().append("text")
+    .attr("dy", -10)
+    .attr("text-anchor", "middle")
+    .text(d => d.id)
+    .style("font-size", "14px")
+    .style("font-weight", "bold")
+    .style("fill", "#0f0");
+
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .on("tick", () => {
+      link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      node.attr("cx", d => d.x).attr("cy", d => d.y);
+      labels.attr("x", d => d.x).attr("y", d => d.y);
+    });
+
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null; d.fy = null;
+  }
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const edgeMap = new Map();
+  links.forEach(link => {
+    const key = `${link.source.id}->${link.target.id}`;
+    const latency = parseInt(link.properties?.latency_in_ms?.replace("ms", "") || "0");
+    edgeMap.set(key, { latency, link });
+    edgeMap.set(`${link.target.id}->${link.source.id}`, { latency, link });
+  });
+
+  document.getElementById("find-path").addEventListener("click", () => {
+    const src = document.getElementById("source-node").value.trim();
+    const dst = document.getElementById("target-node").value.trim();
+    if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+      document.getElementById("path-result").innerText = "Invalid source or destination.";
+      return;
+    }
+
+    const distances = {}, prev = {};
+    const visited = new Set();
+    const pq = new Set(Object.keys(Object.fromEntries(nodeMap)));
+    nodes.forEach(n => distances[n.id] = Infinity);
+    distances[src] = 0;
+
+    while (pq.size) {
+      const current = [...pq].reduce((a, b) => distances[a] < distances[b] ? a : b);
+      pq.delete(current);
+      if (current === dst) break;
+      visited.add(current);
+
+      nodes.forEach(n => {
+        const neighbor = n.id;
+        const key = `${current}->${neighbor}`;
+        if (pq.has(neighbor) && edgeMap.has(key)) {
+          const { latency } = edgeMap.get(key);
+          const alt = distances[current] + latency;
+          if (alt < distances[neighbor]) {
+            distances[neighbor] = alt;
+            prev[neighbor] = current;
+          }
+        }
+      });
+    }
+
+    const path = [];
+    for (let at = dst; at; at = prev[at]) path.push(at);
+    path.reverse();
+
+    if (path.length < 2) {
+      document.getElementById("path-result").innerText = "No path found.";
+      return;
+    }
+
+    // Highlight
+    d3.selectAll("line").style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    }).style("stroke-width", 2);
+
+    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+
+    const pathLinks = new Set();
+    for (let i = 0; i < path.length - 1; i++) {
+      pathLinks.add(`${path[i]}->${path[i+1]}`);
+      pathLinks.add(`${path[i+1]}->${path[i]}`);
+    }
+
+    d3.selectAll("line")
+      .filter(d => pathLinks.has(`${d.source.id}->${d.target.id}`))
+      .style("stroke", "#00ffff")
+      .style("stroke-width", 4);
+
+    d3.selectAll("circle")
+      .filter(d => path.includes(d.id))
+      .style("stroke", "#00ffff")
+      .style("stroke-width", 3);
+
+    const totalLatency = distances[dst];
+    const steps = path.map((n, i) => i === 0 ? n : `is CONNECTED to ${n}`).join(", ");
+    document.getElementById("path-result").innerText = steps + `.
+Total latency: ${totalLatency}ms`;
+  });
+
+  document.getElementById("reset-path").addEventListener("click", () => {
+    document.getElementById("source-node").value = "";
+    document.getElementById("target-node").value = "";
+    document.getElementById("path-result").innerText = "";
+    d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
+    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+  });
+});
+</script>
+
+</body>
+</html>
