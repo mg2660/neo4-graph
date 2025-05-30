@@ -17,7 +17,6 @@
       stroke-width: 1.5px;
     }
     .link {
-      stroke: #0f0;
       stroke-width: 2;
     }
     .tooltip {
@@ -63,13 +62,28 @@ d3.json("http://localhost:3000/api/graph")
 
     const container = svg.append("g");
 
+    const getRouterColor = node => {
+      if (node.labels?.[0] === "Router") {
+        const status = node.properties?.alarm_status;
+        if (status === "RED") return "#ff0000";
+        if (status === "AMBER") return "#ffbf00";
+      }
+      return "#0f0";
+    };
+
     const link = container.append("g")
         .attr("class", "links")
       .selectAll("line")
       .data(links)
       .enter().append("line")
       .attr("class", "link")
-      .style("stroke", "#0f0")
+      .style("stroke", d => {
+        const sourceColor = getRouterColor(d.source);
+        const targetColor = getRouterColor(d.target);
+        if (sourceColor === "#ff0000" || targetColor === "#ff0000") return "#ff0000";
+        if (sourceColor === "#ffbf00" || targetColor === "#ffbf00") return "#ffbf00";
+        return "#0f0";
+      })
       .style("stroke-width", 2);
 
     link.on("mouseover", (event, d) => {
@@ -92,8 +106,9 @@ d3.json("http://localhost:3000/api/graph")
       .enter().append("text")
         .attr("dy", ".35em")
         .attr("text-anchor", "middle")
-        .style("font-size", "10px")
-        .style("fill", "#0f0")
+        .style("font-size", "9px")
+        .style("fill", "#66ff66")
+        .style("font-weight", "normal")
         .text(d => d.type);
 
     const node = container.append("g")
@@ -105,7 +120,7 @@ d3.json("http://localhost:3000/api/graph")
           const smallLabels = ["Users", "GameStream", "Path"];
           return smallLabels.includes(d.id) || smallLabels.includes(d.labels[0]) ? 6 : 14;
         })
-        .attr("fill", "#0f0")
+        .attr("fill", d => getRouterColor(d))
         .attr("class", "node")
         .call(d3.drag()
           .on("start", dragstarted)
@@ -127,7 +142,8 @@ d3.json("http://localhost:3000/api/graph")
         .attr("dy", -10)
         .attr("text-anchor", "middle")
         .text(d => d.id)
-        .style("font-size", "10px")
+        .style("font-size", "14px")
+        .style("font-weight", "bold")
         .style("fill", "#0f0");
 
     const simulation = d3.forceSimulation(nodes)
@@ -173,7 +189,6 @@ d3.json("http://localhost:3000/api/graph")
       d.fy = null;
     }
 
-    // Handle Window Resize
     window.addEventListener("resize", () => {
       const newWidth = window.innerWidth;
       const newHeight = window.innerHeight;
