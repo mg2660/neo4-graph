@@ -150,8 +150,24 @@ d3.json("http://localhost:3000/api/graph").then(data => {
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const edgeMap = new Map();
   links.forEach(link => {
+    //const key = `${link.source.id}->${link.target.id}`;
+    //const latency = parseInt(link.properties?.latency_in_ms?.replace("ms", "").trim() || "0");
     const key = `${link.source.id}->${link.target.id}`;
-    const latency = parseInt(link.properties?.latency_in_ms?.replace("ms", "") || "0");
+const rawLatency = link.properties?.latency;
+//console.log("Raw latency:", rawLatency);
+
+let latency = 0;
+if (typeof rawLatency === "string") {
+  const match = rawLatency.match(/\d+/);
+  if (match) latency = parseInt(match[0]);
+} else if (typeof rawLatency === "number") {
+  latency = rawLatency;
+}
+
+edgeMap.set(key, { latency, link });
+edgeMap.set(`${link.target.id}->${link.source.id}`, { latency, link });
+
+    //console.log("hiiiii",latency,link);  //debug 01
     edgeMap.set(key, { latency, link });
     edgeMap.set(`${link.target.id}->${link.source.id}`, { latency, link });
   });
@@ -175,19 +191,30 @@ d3.json("http://localhost:3000/api/graph").then(data => {
       pq.delete(current);
       if (current === dst) break;
       visited.add(current);
+//console.log("Sample link:",links[0]);
+      links.forEach(link => {
+  const sourceId = link.source.id || link.source;
+  const targetId = link.target.id || link.target;
 
-      nodes.forEach(n => {
-        const neighbor = n.id;
-        const key = `${current}->${neighbor}`;
-        if (pq.has(neighbor) && edgeMap.has(key)) {
-          const { latency } = edgeMap.get(key);
-          const alt = distances[current] + latency;
-          if (alt < distances[neighbor]) {
-            distances[neighbor] = alt;
-            prev[neighbor] = current;
-          }
-        }
-      });
+  if (sourceId === current && pq.has(targetId)) {
+    const { latency } = edgeMap.get(`${sourceId}->${targetId}`);
+    const alt = distances[current] + latency;
+    if (alt < distances[targetId]) {
+      distances[targetId] = alt;
+      prev[targetId] = current;
+    }
+  }
+
+  if (targetId === current && pq.has(sourceId)) {
+    const { latency } = edgeMap.get(`${targetId}->${sourceId}`);
+    const alt = distances[current] + latency;
+    if (alt < distances[sourceId]) {
+      distances[sourceId] = alt;
+      prev[sourceId] = current;
+    }
+  }
+});
+
     }
 
     const path = [];
