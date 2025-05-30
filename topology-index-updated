@@ -62,12 +62,12 @@ d3.json("http://localhost:3000/api/graph")
 
     const container = svg.append("g");
 
-    const getRouterColor = node => {
-      if (node.labels?.[0] === "Router") {
-        const status = node.properties?.alarm_status;
-        if (status === "RED") return "#ff0000";
-        if (status === "AMBER") return "#ffbf00";
-      }
+    // Determine color based on alarm_status
+    const getNodeColor = node => {
+      const status = node.properties?.alarm_status;
+      if (status === "RED") return "#ff0000";
+      if (status === "AMBER") return "#ffbf00";
+      if (status === "GREEN") return "#0f0";
       return "#0f0";
     };
 
@@ -78,10 +78,11 @@ d3.json("http://localhost:3000/api/graph")
       .enter().append("line")
       .attr("class", "link")
       .style("stroke", d => {
-        const sourceColor = getRouterColor(d.source);
-        const targetColor = getRouterColor(d.target);
-        if (sourceColor === "#ff0000" || targetColor === "#ff0000") return "#ff0000";
-        if (sourceColor === "#ffbf00" || targetColor === "#ffbf00") return "#ffbf00";
+        const sourceStatus = d.source.properties?.alarm_status;
+        const targetStatus = d.target.properties?.alarm_status;
+
+        if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+        if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
         return "#0f0";
       })
       .style("stroke-width", 2);
@@ -120,7 +121,7 @@ d3.json("http://localhost:3000/api/graph")
           const smallLabels = ["Users", "GameStream", "Path"];
           return smallLabels.includes(d.id) || smallLabels.includes(d.labels[0]) ? 6 : 14;
         })
-        .attr("fill", d => getRouterColor(d))
+        .attr("fill", d => getNodeColor(d))
         .attr("class", "node")
         .call(d3.drag()
           .on("start", dragstarted)
