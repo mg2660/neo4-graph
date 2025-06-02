@@ -1,212 +1,295 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Network Graph - Latency Paths</title>
-  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Graph Latency Path Finder</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
   <style>
     body {
       margin: 0;
-      overflow: hidden;
-      background: #111;
-      color: white;
-      font-family: sans-serif;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #0f0;
     }
-    svg {
-      width: 100vw;
-      height: 100vh;
+    .node {
+      stroke: #fff;
+      stroke-width: 1.5px;
+    }
+    .link {
+      stroke-width: 2;
     }
     .tooltip {
       position: absolute;
-      text-align: center;
-      padding: 5px;
+      background: #111;
+      border: 1px solid #0f0;
+      padding: 6px;
       font-size: 12px;
-      background: white;
-      color: black;
-      border: 1px solid #ccc;
       pointer-events: none;
-      border-radius: 4px;
+      color: #0f0;
+    }
+    .labels text {
+      paint-order: stroke;
+      stroke: black;
+      stroke-width: 2px;
+      fill: #0f0;
+    }
+    .glow {
+      filter: url(#glow);
     }
   </style>
 </head>
 <body>
-  <svg></svg>
-  <script>
-    const svg = d3.select("svg");
-    const width = window.innerWidth;
-    const height = window.innerHeight;const colorStyles = [
-  { color: "#00ffff", filter: "url(#glow-cyan)" },
-  { color: "#ffa500", filter: "url(#glow-orange)" },
-  { color: "#ff69b4", filter: "url(#glow-pink)" }
-];
 
-const defs = svg.append("defs");
-const filters = [
-  { id: "glow-cyan", stdDeviation: 2.5 },
-  { id: "glow-orange", stdDeviation: 2.5 },
-  { id: "glow-pink", stdDeviation: 2.5 }
-];
-filters.forEach(f => {
-  const filter = defs.append("filter").attr("id", f.id);
-  filter.append("feGaussianBlur")
-    .attr("stdDeviation", f.stdDeviation)
-    .attr("result", "coloredBlur");
-  const merge = filter.append("feMerge");
-  merge.append("feMergeNode").attr("in", "coloredBlur");
-  merge.append("feMergeNode").attr("in", "SourceGraphic");
-});
+<svg id="graph" style="width: 100vw; height: 100vh;">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
 
-const tooltip = d3.select("body").append("div")
-  .attr("class", "tooltip")
-  .style("opacity", 0);
+<div id="tooltip" class="tooltip" style="display: none;"></div>
 
-fetch("latency-data.json")
-  .then(res => res.json())
-  .then(data => {
-    const nodes = data.nodes.map(d => Object.assign({}, d));
-    const links = data.links.map(d => Object.assign({}, d));
+<div id="path-controls" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0;">
+  <label style="color:#0f0;">From:</label>
+  <input id="source-node" type="text" placeholder="e.g. Eve" />
+  <label style="color:#0f0; margin-left: 10px;">To:</label>
+  <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
+  <button id="find-path" style="margin-left: 10px;">Find Path</button>
+  <button id="find-alternatives" style="margin-left: 10px;">Alt Paths</button>
+  <button id="reset-path" style="margin-left: 10px;">Reset</button>
+</div>
 
-    const nodeById = Object.fromEntries(nodes.map(d => [d.id, d]));
-    links.forEach(l => {
-      l.source = nodeById[l.source];
-      l.target = nodeById[l.target];
+<div id="path-result" style="position: absolute; top: 70px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0; color:#0f0; max-width: 400px;"></div>
+
+<script>
+d3.json("http://localhost:3000/api/graph").then(data => {
+  const nodes = data.nodes;
+  const links = data.links;
+
+  const svg = d3.select("svg");
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const tooltip = d3.select("#tooltip");
+  const container = svg.append("g");
+  const zoom = d3.zoom().scaleExtent([0.1, 4]).on("zoom", event => container.attr("transform", event.transform));
+  svg.call(zoom);
+
+  const getNodeColor = node => {
+    const status = node.properties?.alarm_status;
+    if (status === "RED") return "#ff0000";
+    if (status === "AMBER") return "#ffbf00";
+    return "#0f0";
+  };
+
+  const link = container.append("g").attr("class", "links")
+    .selectAll("line")
+    .data(links)
+    .enter().append("line")
+    .attr("class", "link")
+    .style("stroke", d => {
+      const statusA = d.source.properties?.alarm_status;
+      const statusB = d.target.properties?.alarm_status;
+      if (statusA === "RED" || statusB === "RED") return "#ff0000";
+      if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
+      return "#0f0";
     });
 
-    const simulation = d3.forceSimulation(nodes)
-      .force("link", d3.forceLink(links).id(d => d.id).distance(100))
-      .force("charge", d3.forceManyBody().strength(-500))
-      .force("center", d3.forceCenter(width / 2, height / 2));
+  const node = container.append("g").attr("class", "nodes")
+    .selectAll("circle")
+    .data(nodes)
+    .enter().append("circle")
+    .attr("r", 12)
+    .attr("fill", getNodeColor)
+    .attr("class", "node")
+    .call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended))
+    .on("mouseover", (event, d) => {
+      tooltip.style("display", "block")
+        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+        .html(`<strong>${d.id}</strong><br>${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
+    })
+    .on("mouseout", () => tooltip.style("display", "none"));
 
-    const link = svg.append("g")
-      .attr("stroke", "#0f0")
-      .attr("stroke-opacity", 0.6)
-      .selectAll("line")
-      .data(links)
-      .join("line")
-      .attr("stroke-width", 2);
+  const labels = container.append("g").attr("class", "labels")
+    .selectAll("text")
+    .data(nodes)
+    .enter().append("text")
+    .attr("dy", -10)
+    .attr("text-anchor", "middle")
+    .text(d => d.id)
+    .style("font-size", "14px")
+    .style("font-weight", "bold")
+    .style("fill", "#0f0");
 
-    const node = svg.append("g")
-      .attr("stroke", "#fff")
-      .attr("stroke-width", 1.5)
-      .selectAll("circle")
-      .data(nodes)
-      .join("circle")
-      .attr("r", 8)
-      .attr("fill", d => d.alarm_status === "RED" ? "red" : "#00f")
-      .call(drag(simulation));
-
-    node.append("title").text(d => d.id);
-
-    node.on("mouseover", (event, d) => {
-      tooltip.transition().duration(200).style("opacity", 0.9);
-      tooltip.html(d.id).style("left", event.pageX + "px").style("top", (event.pageY - 28) + "px");
-    }).on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0));
-
-    simulation.on("tick", () => {
-      link.attr("x1", d => d.source.x)
-          .attr("y1", d => d.source.y)
-          .attr("x2", d => d.target.x)
-          .attr("y2", d => d.target.y);
-
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .on("tick", () => {
+      link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
       node.attr("cx", d => d.x).attr("cy", d => d.y);
+      labels.attr("x", d => d.x).attr("y", d => d.y);
     });
 
-    function drag(simulation) {
-      return d3.drag()
-        .on("start", event => {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          event.subject.fx = event.subject.x;
-          event.subject.fy = event.subject.y;
-        })
-        .on("drag", event => {
-          event.subject.fx = event.x;
-          event.subject.fy = event.y;
-        })
-        .on("end", event => {
-          if (!event.active) simulation.alphaTarget(0);
-          event.subject.fx = null;
-          event.subject.fy = null;
-        });
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null; d.fy = null;
+  }
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const edgeMap = new Map();
+
+  links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    let latency = 0;
+    const rawLatency = link.properties?.latency;
+    if (typeof rawLatency === "string") {
+      const match = rawLatency.match(/\d+/);
+      if (match) latency = parseInt(match[0]);
+    } else if (typeof rawLatency === "number") {
+      latency = rawLatency;
     }
 
-    // Dijkstra's algorithm
-    function dijkstra(sourceId, targetId, excludedIds = new Set()) {
-      const distances = {}, prev = {}, queue = new Set(nodes.map(n => n.id));
-      nodes.forEach(n => distances[n.id] = Infinity);
-      distances[sourceId] = 0;
-
-      while (queue.size) {
-        const u = [...queue].reduce((min, id) => distances[id] < distances[min] ? id : min);
-        queue.delete(u);
-        if (u === targetId) break;
-        const neighbors = links.filter(l =>
-          (l.source.id === u && !excludedIds.has(l.target.id)) ||
-          (l.target.id === u && !excludedIds.has(l.source.id)));
-        for (const l of neighbors) {
-          const v = l.source.id === u ? l.target.id : l.source.id;
-          const alt = distances[u] + l.latency;
-          if (alt < distances[v]) {
-            distances[v] = alt;
-            prev[v] = u;
-          }
-        }
-      }
-
-      const path = [];
-      let u = targetId;
-      if (prev[u] || u === sourceId) {
-        while (u) {
-          path.unshift(u);
-          u = prev[u];
-        }
-      }
-      return { path, latency: distances[targetId] };
-    }
-
-    function findMultiplePaths(sourceId, targetId, count = 3) {
-      const paths = [], visitedEdges = new Set();
-      const excludedNodes = new Set(nodes.filter(n => n.alarm_status === "RED").map(n => n.id));
-
-      for (let i = 0; i < count; i++) {
-        const result = dijkstra(sourceId, targetId, excludedNodes);
-        if (!result.path.length) break;
-        paths.push(result);
-        for (let j = 0; j < result.path.length - 1; j++) {
-          excludedNodes.add(result.path[j]); // prevent reuse of same nodes
-        }
-      }
-      return paths;
-    }
-
-    function highlightPaths(paths) {
-      d3.selectAll("line").style("stroke", "#0f0").style("filter", null).style("stroke-width", 2);
-      d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
-
-      paths.forEach((p, i) => {
-        const { color, filter } = colorStyles[i % colorStyles.length];
-        for (let j = 0; j < p.path.length - 1; j++) {
-          const from = p.path[j], to = p.path[j+1];
-          d3.selectAll("line")
-            .filter(d =>
-              (d.source.id === from && d.target.id === to) ||
-              (d.source.id === to && d.target.id === from))
-            .style("stroke", color)
-            .style("stroke-width", 4)
-            .style("filter", filter);
-        }
-        d3.selectAll("circle")
-          .filter(d => p.path.includes(d.id))
-          .style("stroke", color)
-          .style("stroke-width", 3);
-      });
-    }
-
-    const source = "NodeA";
-    const target = "NodeZ";
-    const bestPaths = findMultiplePaths(source, target);
-    highlightPaths(bestPaths);
+    edgeMap.set(`${sourceId}->${targetId}`, { latency, link });
+    edgeMap.set(`${targetId}->${sourceId}`, { latency, link });
   });
 
-  </script>
+  function findKShortestPaths(src, dst, k) {
+    const allPaths = [];
+
+    function dfs(current, target, visited, path, totalLatency) {
+      if (allPaths.length >= k) return;
+      if (current === target) {
+        allPaths.push({ path: [...path], latency: totalLatency });
+        return;
+      }
+
+      visited.add(current);
+
+      for (const [key, { latency }] of edgeMap.entries()) {
+        const [from, to] = key.split("->");
+        if (from === current && !visited.has(to) && nodeMap.get(to).properties?.alarm_status !== "RED") {
+          path.push(to);
+          dfs(to, target, visited, path, totalLatency + latency);
+          path.pop();
+        }
+      }
+
+      visited.delete(current);
+    }
+
+    dfs(src, dst, new Set(), [src], 0);
+    return allPaths.sort((a, b) => a.latency - b.latency).slice(0, k);
+  }
+
+  function highlightPaths(paths) {
+    const colors = ["#00ffff", "#ffa500", "#ff00ff"];
+    const highlightedLinks = new Set();
+    paths.forEach(({ path }, i) => {
+      for (let j = 0; j < path.length - 1; j++) {
+        highlightedLinks.add(`${path[j]}->${path[j + 1]}::${i}`);
+        highlightedLinks.add(`${path[j + 1]}->${path[j]}::${i}`);
+      }
+    });
+
+    d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
+
+    paths.forEach(({ path }, i) => {
+      d3.selectAll("line")
+        .filter(d => {
+          return path.includes(d.source.id) && path.includes(d.target.id);
+        })
+        .style("stroke", colors[i % colors.length])
+        .style("stroke-width", 4)
+        .attr("class", "glow");
+    });
+
+    d3.selectAll("circle")
+      .style("stroke", d => {
+        if (paths.some(p => p.path.includes(d.id))) return "#fff";
+        return "#0f0";
+      })
+      .style("stroke-width", d => {
+        if (paths.some(p => p.path.includes(d.id))) return 3;
+        return 1.5;
+      });
+
+    return paths.map((p, i) => `<span style="color:${colors[i]}">${p.path.join(" → ")} (${p.latency}ms)</span>`).join("<br>");
+  }
+
+  document.getElementById("find-path").addEventListener("click", () => {
+    const src = document.getElementById("source-node").value.trim();
+    const dst = document.getElementById("target-node").value.trim();
+
+    if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+      document.getElementById("path-result").innerText = "Invalid source or destination.";
+      return;
+    }
+
+    const results = findKShortestPaths(src, dst, 1);
+    if (results.length === 0) {
+      document.getElementById("path-result").innerText = "No path found.";
+      return;
+    }
+
+    document.getElementById("path-result").innerHTML = highlightPaths(results);
+  });
+
+  document.getElementById("find-alternatives").addEventListener("click", () => {
+    const src = document.getElementById("source-node").value.trim();
+    const dst = document.getElementById("target-node").value.trim();
+
+    if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+      document.getElementById("path-result").innerText = "Invalid source or destination.";
+      return;
+    }
+
+    const results = findKShortestPaths(src, dst, 3);
+    if (results.length === 0) {
+      document.getElementById("path-result").innerText = "No path found.";
+      return;
+    }
+
+    document.getElementById("path-result").innerHTML = highlightPaths(results);
+  });
+
+  document.getElementById("reset-path").addEventListener("click", () => {
+    document.getElementById("source-node").value = "";
+    document.getElementById("target-node").value = "";
+    document.getElementById("path-result").innerText = "";
+    d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
+    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+  });
+});
+</script>
+
 </body>
 </html>
