@@ -45,7 +45,7 @@
   <input id="source-node" type="text" placeholder="e.g. Eve" />
   <label style="color:#0f0; margin-left: 10px;">To:</label>
   <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
-  <button id="find-path" style="margin-left: 10px;">Find Lowest Latency</button>
+  <button id="find-path" style="margin-left: 10px;">Find Path</button>
   <button id="reset-path" style="margin-left: 10px;">Reset</button>
 </div>
 <div id="path-result" style="position: absolute; top: 70px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0; color:#0f0; max-width: 400px;"></div>
