@@ -60,7 +60,7 @@
   <input id="source-node" type="text" placeholder="e.g. Eve" />
   <label style="color:#0f0; margin-left: 10px;">To:</label>
   <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
-  <button id="find-path" style="margin-left: 10px;">Find Path</button>
+  <button id="find-path" style="margin-left: 10px;">Find Best Path</button>
   <button id="find-alternatives" style="margin-left: 10px;">Alt Paths</button>
   <button id="reset-path" style="margin-left: 10px;">Reset</button>
 </div>
@@ -199,45 +199,49 @@ d3.json("http://localhost:3000/api/graph").then(data => {
   }
 
   function highlightPaths(paths) {
-    const colors = ["#00ffff", "#ffa500", "#ff00ff"];
-    const highlightedLinks = new Set();
-    paths.forEach(({ path }, i) => {
-      for (let j = 0; j < path.length - 1; j++) {
-        highlightedLinks.add(`${path[j]}->${path[j + 1]}::${i}`);
-        highlightedLinks.add(`${path[j + 1]}->${path[j]}::${i}`);
-      }
-    });
+  const colors = ["#00ffff", "#ffa500", "#ff00ff"];
+  const edgeKeysPerPath = paths.map(({ path }) => {
+    const keys = new Set();
+    for (let i = 0; i < path.length - 1; i++) {
+      keys.add(`${path[i]}->${path[i+1]}`);
+      keys.add(`${path[i+1]}->${path[i]}`);
+    }
+    return keys;
+  });
 
-    d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
-      const sourceStatus = d.source.properties?.alarm_status;
-      const targetStatus = d.target.properties?.alarm_status;
-      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
-      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+  d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+    const sourceStatus = d.source.properties?.alarm_status;
+    const targetStatus = d.target.properties?.alarm_status;
+    if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+    if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+    return "#0f0";
+  });
+
+  // Apply glow and color per path
+  edgeKeysPerPath.forEach((keys, i) => {
+    d3.selectAll("line")
+      .filter(d => keys.has(`${d.source.id}->${d.target.id}`))
+      .style("stroke", colors[i % colors.length])
+      .style("stroke-width", 4)
+      .attr("class", "glow");
+  });
+
+  // Highlight nodes
+  d3.selectAll("circle")
+    .style("stroke", d => {
+      if (paths.some(p => p.path.includes(d.id))) return "#fff";
       return "#0f0";
+    })
+    .style("stroke-width", d => {
+      if (paths.some(p => p.path.includes(d.id))) return 3;
+      return 1.5;
     });
 
-    paths.forEach(({ path }, i) => {
-      d3.selectAll("line")
-        .filter(d => {
-          return path.includes(d.source.id) && path.includes(d.target.id);
-        })
-        .style("stroke", colors[i % colors.length])
-        .style("stroke-width", 4)
-        .attr("class", "glow");
-    });
+  return paths.map((p, i) =>
+    `<span style="color:${colors[i]}">${p.path.join(" → ")} (${p.latency}ms)</span>`
+  ).join("<br>");
+}
 
-    d3.selectAll("circle")
-      .style("stroke", d => {
-        if (paths.some(p => p.path.includes(d.id))) return "#fff";
-        return "#0f0";
-      })
-      .style("stroke-width", d => {
-        if (paths.some(p => p.path.includes(d.id))) return 3;
-        return 1.5;
-      });
-
-    return paths.map((p, i) => `<span style="color:${colors[i]}">${p.path.join(" → ")} (${p.latency}ms)</span>`).join("<br>");
-  }
 
   document.getElementById("find-path").addEventListener("click", () => {
     const src = document.getElementById("source-node").value.trim();
