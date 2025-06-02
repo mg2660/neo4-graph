@@ -1,193 +1,257 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Network Graph with Latency Paths</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-        .node {
-            stroke: #fff;
-            stroke-width: 1.5px;
-        }
-
-        .link {
-            stroke-opacity: 0.6;
-            stroke-width: 2px;
-        }
-
-        .highlighted {
-            stroke: blue;
-            stroke-width: 4px;
-        }
-
-        .alternative {
-            stroke: orange;
-            stroke-width: 3px;
-            stroke-dasharray: 4;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Graph Latency Path Finder</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #0f0;
+    }
+    .node {
+      stroke: #fff;
+      stroke-width: 1.5px;
+    }
+    .link {
+      stroke-width: 2;
+    }
+    .tooltip {
+      position: absolute;
+      background: #111;
+      border: 1px solid #0f0;
+      padding: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      color: #0f0;
+    }
+    .labels text {
+      paint-order: stroke;
+      stroke: black;
+      stroke-width: 2px;
+      fill: #0f0;
+    }
+  </style>
 </head>
 <body>
-    <h3>Click on a source node to highlight the shortest and alternative latency paths</h3>
-    <svg width="960" height="600"></svg>
-    <script>
-        const svg = d3.select("svg");
-        const width = +svg.attr("width");
-        const height = +svg.attr("height");
 
-        const data = {
-            nodes: [
-                { id: "A", alarm_status: "GREEN" },
-                { id: "B", alarm_status: "GREEN" },
-                { id: "C", alarm_status: "RED" },
-                { id: "D", alarm_status: "GREEN" },
-                { id: "E", alarm_status: "AMBER" }
-            ],
-            links: [
-                { source: "A", target: "B", latency: 10 },
-                { source: "B", target: "C", latency: 20 },
-                { source: "A", target: "D", latency: 15 },
-                { source: "D", target: "E", latency: 10 },
-                { source: "B", target: "E", latency: 25 }
-            ]
-        };
+<svg id="graph" style="width: 100vw; height: 100vh;"></svg>
+<div id="tooltip" class="tooltip" style="display: none;"></div>
+<div id="path-controls" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0;">
+  <label style="color:#0f0;">From:</label>
+  <input id="source-node" type="text" placeholder="e.g. Eve" />
+  <label style="color:#0f0; margin-left: 10px;">To:</label>
+  <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
+  <button id="find-path" style="margin-left: 10px;">Find Path</button>
+  <button id="reset-path" style="margin-left: 10px;">Reset</button>
+</div>
+<div id="path-result" style="position: absolute; top: 70px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0; color:#0f0; max-width: 400px;"></div>
 
-        const colorByStatus = {
-            GREEN: "green",
-            AMBER: "orange",
-            RED: "red"
-        };
+<script>
+d3.json("http://localhost:3000/api/graph").then(data => {
+  const nodes = data.nodes;
+  const links = data.links;
 
-        const simulation = d3.forceSimulation(data.nodes)
-            .force("link", d3.forceLink(data.links).id(d => d.id).distance(100))
-            .force("charge", d3.forceManyBody().strength(-400))
-            .force("center", d3.forceCenter(width / 2, height / 2));
+  const svg = d3.select("svg");
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const tooltip = d3.select("#tooltip");
+  const container = svg.append("g");
+  const zoom = d3.zoom().scaleExtent([0.1, 4]).on("zoom", event => container.attr("transform", event.transform));
+  svg.call(zoom);
 
-        const link = svg.append("g")
-            .attr("class", "links")
-            .selectAll("line")
-            .data(data.links)
-            .join("line")
-            .attr("class", "link")
-            .style("stroke", d => {
-                const s = typeof d.source === 'string' ? d.source : d.source.id;
-                const t = typeof d.target === 'string' ? d.target : d.target.id;
-                const sStatus = data.nodes.find(n => n.id === s).alarm_status;
-                const tStatus = data.nodes.find(n => n.id === t).alarm_status;
-                return colorByStatus[sStatus === "RED" || tStatus === "RED" ? "RED" :
-                                     sStatus === "AMBER" || tStatus === "AMBER" ? "AMBER" : "GREEN"];
-            });
+  const getNodeColor = node => {
+    const status = node.properties?.alarm_status;
+    if (status === "RED") return "#ff0000";
+    if (status === "AMBER") return "#ffbf00";
+    return "#0f0";
+  };
 
-        const node = svg.append("g")
-            .attr("class", "nodes")
-            .selectAll("circle")
-            .data(data.nodes)
-            .join("circle")
-            .attr("r", 10)
-            .attr("fill", d => colorByStatus[d.alarm_status])
-            .attr("class", "node")
-            .on("click", nodeClicked)
-            .call(drag(simulation));
+  const link = container.append("g").attr("class", "links")
+    .selectAll("line")
+    .data(links)
+    .enter().append("line")
+    .attr("class", "link")
+    .style("stroke", d => {
+      const statusA = d.source.properties?.alarm_status;
+      const statusB = d.target.properties?.alarm_status;
+      if (statusA === "RED" || statusB === "RED") return "#ff0000";
+      if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
 
-        node.append("title").text(d => d.id);
+  const node = container.append("g").attr("class", "nodes")
+    .selectAll("circle")
+    .data(nodes)
+    .enter().append("circle")
+    .attr("r", 12)
+    .attr("fill", getNodeColor)
+    .attr("class", "node")
+    .call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended))
+    .on("mouseover", (event, d) => {
+      tooltip.style("display", "block")
+        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+        .html(`<strong>${d.id}</strong><br>${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
+    })
+    .on("mouseout", () => tooltip.style("display", "none"));
 
-        simulation.on("tick", () => {
-            link
-                .attr("x1", d => d.source.x)
-                .attr("y1", d => d.source.y)
-                .attr("x2", d => d.target.x)
-                .attr("y2", d => d.target.y);
+  const labels = container.append("g").attr("class", "labels")
+    .selectAll("text")
+    .data(nodes)
+    .enter().append("text")
+    .attr("dy", -10)
+    .attr("text-anchor", "middle")
+    .text(d => d.id)
+    .style("font-size", "14px")
+    .style("font-weight", "bold")
+    .style("fill", "#0f0");
 
-            node
-                .attr("cx", d => d.x)
-                .attr("cy", d => d.y);
-        });
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .on("tick", () => {
+      link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      node.attr("cx", d => d.x).attr("cy", d => d.y);
+      labels.attr("x", d => d.x).attr("y", d => d.y);
+    });
 
-        function drag(simulation) {
-            function dragstarted(event, d) {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fx = d.x;
-                d.fy = d.y;
-            }
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null; d.fy = null;
+  }
 
-            function dragged(event, d) {
-                d.fx = event.x;
-                d.fy = event.y;
-            }
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const edgeMap = new Map();
 
-            function dragended(event, d) {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
-            }
+  links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    let latency = 0;
+    const rawLatency = link.properties?.latency;
+    if (typeof rawLatency === "string") {
+      const match = rawLatency.match(/\d+/);
+      if (match) latency = parseInt(match[0]);
+    } else if (typeof rawLatency === "number") {
+      latency = rawLatency;
+    }
 
-            return d3.drag()
-                .on("start", dragstarted)
-                .on("drag", dragged)
-                .on("end", dragended);
+    edgeMap.set(`${sourceId}->${targetId}`, { latency, link });
+    edgeMap.set(`${targetId}->${sourceId}`, { latency, link });
+  });
+
+  document.getElementById("find-path").addEventListener("click", () => {
+    const src = document.getElementById("source-node").value.trim();
+    const dst = document.getElementById("target-node").value.trim();
+
+    if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+      document.getElementById("path-result").innerText = "Invalid source or destination.";
+      return;
+    }
+
+    if (nodeMap.get(src).properties?.alarm_status === "RED" || nodeMap.get(dst).properties?.alarm_status === "RED") {
+      document.getElementById("path-result").innerText = "Path includes a node that is DOWN (RED).";
+      return;
+    }
+
+    const paths = [];
+    const minLatency = { value: Infinity };
+
+    function dfs(current, target, visited, path, totalLatency) {
+      if (totalLatency > minLatency.value) return;
+      if (current === target) {
+        if (totalLatency < minLatency.value) {
+          minLatency.value = totalLatency;
+          paths.length = 0;
+          paths.push([...path]);
+        } else if (totalLatency === minLatency.value) {
+          paths.push([...path]);
         }
+        return;
+      }
 
-        function nodeClicked(event, source) {
-            link.classed("highlighted", false).classed("alternative", false);
-            const validNodes = data.nodes.filter(n => n.alarm_status !== "RED").map(n => n.id);
-            const validLinks = data.links.filter(l =>
-                validNodes.includes(typeof l.source === 'string' ? l.source : l.source.id) &&
-                validNodes.includes(typeof l.target === 'string' ? l.target : l.target.id)
-            );
-            const graph = buildGraph(validLinks);
-            const paths = findAllPaths(graph, source.id, validNodes);
-            if (paths.length === 0) return;
-            paths.sort((a, b) => a.latency - b.latency);
-            highlightPath(paths[0].path, "highlighted");
-            for (let i = 1; i < Math.min(3, paths.length); i++) {
-                highlightPath(paths[i].path, "alternative");
-            }
-        }
+      visited.add(current);
 
-        function buildGraph(links) {
-            const graph = {};
-            links.forEach(link => {
-                const s = typeof link.source === 'string' ? link.source : link.source.id;
-                const t = typeof link.target === 'string' ? link.target : link.target.id;
-                if (!graph[s]) graph[s] = [];
-                if (!graph[t]) graph[t] = [];
-                graph[s].push({ node: t, latency: link.latency });
-                graph[t].push({ node: s, latency: link.latency });
-            });
-            return graph;
+      for (const [key, { latency }] of edgeMap.entries()) {
+        const [from, to] = key.split("->");
+        if (from === current && !visited.has(to) && nodeMap.get(to).properties?.alarm_status !== "RED") {
+          path.push(to);
+          dfs(to, target, visited, path, totalLatency + latency);
+          path.pop();
         }
+      }
 
-        function findAllPaths(graph, start, validNodes, end = null, path = [], latency = 0, visited = new Set()) {
-            path = [...path, start];
-            visited.add(start);
-            if (end && start === end) {
-                return [{ path, latency }];
-            }
-            const neighbors = graph[start] || [];
-            let paths = [];
-            for (const { node, latency: edgeLatency } of neighbors) {
-                if (!visited.has(node)) {
-                    const newPaths = findAllPaths(graph, node, validNodes, end, path, latency + edgeLatency, new Set(visited));
-                    paths = paths.concat(newPaths);
-                }
-            }
-            if (!end && path.length > 1) {
-                paths.push({ path, latency });
-            }
-            return paths;
-        }
+      visited.delete(current);
+    }
 
-        function highlightPath(path, className) {
-            for (let i = 0; i < path.length - 1; i++) {
-                const s = path[i];
-                const t = path[i + 1];
-                link.filter(d => {
-                    const sid = typeof d.source === 'string' ? d.source : d.source.id;
-                    const tid = typeof d.target === 'string' ? d.target : d.target.id;
-                    return (sid === s && tid === t) || (sid === t && tid === s);
-                }).classed(className, true);
-            }
-        }
-    </script>
+    dfs(src, dst, new Set(), [src], 0);
+
+    if (paths.length === 0) {
+      document.getElementById("path-result").innerText = "No path found.";
+      return;
+    }
+
+    d3.selectAll("line").style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    }).style("stroke-width", 2);
+
+    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+
+    const highlightedLinks = new Set();
+    paths.forEach(path => {
+      for (let i = 0; i < path.length - 1; i++) {
+        highlightedLinks.add(`${path[i]}->${path[i+1]}`);
+        highlightedLinks.add(`${path[i+1]}->${path[i]}`);
+      }
+    });
+
+    d3.selectAll("line")
+      .filter(d => highlightedLinks.has(`${d.source.id}->${d.target.id}`))
+      .style("stroke", "#00ffff")
+      .style("stroke-width", 4);
+
+    d3.selectAll("circle")
+      .filter(d => paths.some(p => p.includes(d.id)))
+      .style("stroke", "#00ffff")
+      .style("stroke-width", 3);
+
+    const pathDescriptions = paths.map(p => p.join(" → "));
+    document.getElementById("path-result").innerHTML =
+      `Shortest paths (${minLatency.value} ms):<br>` + pathDescriptions.join("<br>");
+  });
+
+  document.getElementById("reset-path").addEventListener("click", () => {
+    document.getElementById("source-node").value = "";
+    document.getElementById("target-node").value = "";
+    document.getElementById("path-result").innerText = "";
+    d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
+    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+  });
+});
+</script>
+
 </body>
 </html>
