@@ -46,6 +46,7 @@
   <label style="color:#0f0; margin-left: 10px;">To:</label>
   <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
   <button id="find-path" style="margin-left: 10px;">Find Path</button>
+  <button id="find-alternatives" style="margin-left: 10px;">Show Alternative Paths</button>
   <button id="reset-path" style="margin-left: 10px;">Reset</button>
 </div>
 <div id="path-result" style="position: absolute; top: 70px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0; color:#0f0; max-width: 400px;"></div>
@@ -153,88 +154,94 @@ d3.json("http://localhost:3000/api/graph").then(data => {
     edgeMap.set(`${targetId}->${sourceId}`, { latency, link });
   });
 
-  document.getElementById("find-path").addEventListener("click", () => {
-    const src = document.getElementById("source-node").value.trim();
-    const dst = document.getElementById("target-node").value.trim();
+  function findPaths(src, dst, maxPaths = 3) {
+    const allPaths = [];
+    function dfs(current, path, visited, total) {
+      if (path.length > nodes.length) return;  // prevent cycles
+      if (current === dst) {
+        allPaths.push({ path: [...path], latency: total });
+        return;
+      }
+      visited.add(current);
+      for (const [key, { latency }] of edgeMap.entries()) {
+        const [from, to] = key.split("->");
+        if (from === current && !visited.has(to) && nodeMap.get(to).properties?.alarm_status !== "RED") {
+          path.push(to);
+          dfs(to, path, visited, total + latency);
+          path.pop();
+        }
+      }
+      visited.delete(current);
+    }
+    dfs(src, [src], new Set(), 0);
+    allPaths.sort((a, b) => a.latency - b.latency);
+    return allPaths.slice(0, maxPaths);
+  }
 
+  function highlightPaths(paths) {
+    const highlightedLinks = new Set();
+    paths.forEach(p => {
+      for (let i = 0; i < p.path.length - 1; i++) {
+        highlightedLinks.add(`${p.path[i]}->${p.path[i+1]}`);
+        highlightedLinks.add(`${p.path[i+1]}->${p.path[i]}`);
+      }
+    });
+
+    d3.selectAll("line").style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (highlightedLinks.has(`${d.source.id}->${d.target.id}`)) return "#00ffff";
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    }).style("stroke-width", d =>
+      highlightedLinks.has(`${d.source.id}->${d.target.id}`) ? 4 : 2
+    );
+
+    d3.selectAll("circle").style("stroke", d =>
+      paths.some(p => p.path.includes(d.id)) ? "#00ffff" : "#fff"
+    ).style("stroke-width", d =>
+      paths.some(p => p.path.includes(d.id)) ? 3 : 1.5
+    );
+  }
+
+  function showPaths(src, dst, maxPaths = 1) {
     if (!nodeMap.has(src) || !nodeMap.has(dst)) {
       document.getElementById("path-result").innerText = "Invalid source or destination.";
       return;
     }
-
     if (nodeMap.get(src).properties?.alarm_status === "RED" || nodeMap.get(dst).properties?.alarm_status === "RED") {
       document.getElementById("path-result").innerText = "Path includes a node that is DOWN (RED).";
       return;
     }
 
-    const paths = [];
-    const minLatency = { value: Infinity };
-
-    function dfs(current, target, visited, path, totalLatency) {
-      if (totalLatency > minLatency.value) return;
-      if (current === target) {
-        if (totalLatency < minLatency.value) {
-          minLatency.value = totalLatency;
-          paths.length = 0;
-          paths.push([...path]);
-        } else if (totalLatency === minLatency.value) {
-          paths.push([...path]);
-        }
-        return;
-      }
-
-      visited.add(current);
-
-      for (const [key, { latency }] of edgeMap.entries()) {
-        const [from, to] = key.split("->");
-        if (from === current && !visited.has(to) && nodeMap.get(to).properties?.alarm_status !== "RED") {
-          path.push(to);
-          dfs(to, target, visited, path, totalLatency + latency);
-          path.pop();
-        }
-      }
-
-      visited.delete(current);
-    }
-
-    dfs(src, dst, new Set(), [src], 0);
-
-    if (paths.length === 0) {
+    const foundPaths = findPaths(src, dst, maxPaths);
+    if (foundPaths.length === 0) {
       document.getElementById("path-result").innerText = "No path found.";
       return;
     }
 
-    d3.selectAll("line").style("stroke", d => {
-      const sourceStatus = d.source.properties?.alarm_status;
-      const targetStatus = d.target.properties?.alarm_status;
-      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
-      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
-      return "#0f0";
-    }).style("stroke-width", 2);
+    highlightPaths(foundPaths);
 
-    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+    const resultText = foundPaths.map(p =>
+      `${p.path.join(" → ")} (${p.latency} ms)`
+    ).join("<br>");
 
-    const highlightedLinks = new Set();
-    paths.forEach(path => {
-      for (let i = 0; i < path.length - 1; i++) {
-        highlightedLinks.add(`${path[i]}->${path[i+1]}`);
-        highlightedLinks.add(`${path[i+1]}->${path[i]}`);
-      }
-    });
-
-    d3.selectAll("line")
-      .filter(d => highlightedLinks.has(`${d.source.id}->${d.target.id}`))
-      .style("stroke", "#00ffff")
-      .style("stroke-width", 4);
-
-    d3.selectAll("circle")
-      .filter(d => paths.some(p => p.includes(d.id)))
-      .style("stroke", "#00ffff")
-      .style("stroke-width", 3);
-
-    const pathDescriptions = paths.map(p => p.join(" → "));
     document.getElementById("path-result").innerHTML =
-      `Shortest paths (${minLatency.value} ms):<br>` + pathDescriptions.join("<br>");
+      maxPaths === 1 ? `Shortest path:<br>${resultText}` :
+                       `Top ${foundPaths.length} alternative paths:<br>${resultText}`;
+  }
+
+  document.getElementById("find-path").addEventListener("click", () => {
+    const src = document.getElementById("source-node").value.trim();
+    const dst = document.getElementById("target-node").value.trim();
+    showPaths(src, dst, 1);
+  });
+
+  document.getElementById("find-alternatives").addEventListener("click", () => {
+    const src = document.getElementById("source-node").value.trim();
+    const dst = document.getElementById("target-node").value.trim();
+    showPaths(src, dst, 3);
   });
 
   document.getElementById("reset-path").addEventListener("click", () => {
@@ -252,6 +259,5 @@ d3.json("http://localhost:3000/api/graph").then(data => {
   });
 });
 </script>
-
 </body>
 </html>
