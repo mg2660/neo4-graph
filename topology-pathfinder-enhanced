@@ -160,8 +160,8 @@ d3.json("http://localhost:3000/api/graph").then(data => {
     let latency = 0;
     const rawLatency = link.properties?.latency;
     if (typeof rawLatency === "string") {
-      const match = rawLatency.match(/\d+/);
-      if (match) latency = parseInt(match[0]);
+      const match = rawLatency.match(/[\d.]+/);
+      if (match) latency = parseFloat(match[0]);
     } else if (typeof rawLatency === "number") {
       latency = rawLatency;
     }
