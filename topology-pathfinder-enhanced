@@ -35,12 +35,11 @@
         const width = +svg.attr("width");
         const height = +svg.attr("height");
 
-        // Simulate your JSON API
         const data = {
             nodes: [
                 { id: "A", alarm_status: "GREEN" },
                 { id: "B", alarm_status: "GREEN" },
-                { id: "C", alarm_status: "RED" },   // RED: down, should be excluded
+                { id: "C", alarm_status: "RED" },
                 { id: "D", alarm_status: "GREEN" },
                 { id: "E", alarm_status: "AMBER" }
             ],
@@ -71,10 +70,12 @@
             .join("line")
             .attr("class", "link")
             .style("stroke", d => {
-                const sourceStatus = data.nodes.find(n => n.id === d.source).alarm_status;
-                const targetStatus = data.nodes.find(n => n.id === d.target).alarm_status;
-                return colorByStatus[sourceStatus === "RED" || targetStatus === "RED" ? "RED" :
-                                     sourceStatus === "AMBER" || targetStatus === "AMBER" ? "AMBER" : "GREEN"];
+                const s = typeof d.source === 'string' ? d.source : d.source.id;
+                const t = typeof d.target === 'string' ? d.target : d.target.id;
+                const sStatus = data.nodes.find(n => n.id === s).alarm_status;
+                const tStatus = data.nodes.find(n => n.id === t).alarm_status;
+                return colorByStatus[sStatus === "RED" || tStatus === "RED" ? "RED" :
+                                     sStatus === "AMBER" || tStatus === "AMBER" ? "AMBER" : "GREEN"];
             });
 
         const node = svg.append("g")
@@ -127,28 +128,17 @@
         }
 
         function nodeClicked(event, source) {
-            // Remove previous highlights
             link.classed("highlighted", false).classed("alternative", false);
-
-            // Filter out nodes with RED alarm status
             const validNodes = data.nodes.filter(n => n.alarm_status !== "RED").map(n => n.id);
             const validLinks = data.links.filter(l =>
-                validNodes.includes(l.source.id || l.source) &&
-                validNodes.includes(l.target.id || l.target)
+                validNodes.includes(typeof l.source === 'string' ? l.source : l.source.id) &&
+                validNodes.includes(typeof l.target === 'string' ? l.target : l.target.id)
             );
-
             const graph = buildGraph(validLinks);
-
             const paths = findAllPaths(graph, source.id, validNodes);
             if (paths.length === 0) return;
-
             paths.sort((a, b) => a.latency - b.latency);
-
-            // Highlight shortest path
-            const shortest = paths[0];
-            highlightPath(shortest.path, "highlighted");
-
-            // Highlight up to 2 alternative paths
+            highlightPath(paths[0].path, "highlighted");
             for (let i = 1; i < Math.min(3, paths.length); i++) {
                 highlightPath(paths[i].path, "alternative");
             }
@@ -157,12 +147,12 @@
         function buildGraph(links) {
             const graph = {};
             links.forEach(link => {
-                const s = link.source.id || link.source;
-                const t = link.target.id || link.target;
+                const s = typeof link.source === 'string' ? link.source : link.source.id;
+                const t = typeof link.target === 'string' ? link.target : link.target.id;
                 if (!graph[s]) graph[s] = [];
                 if (!graph[t]) graph[t] = [];
                 graph[s].push({ node: t, latency: link.latency });
-                graph[t].push({ node: s, latency: link.latency }); // undirected
+                graph[t].push({ node: s, latency: link.latency });
             });
             return graph;
         }
@@ -170,25 +160,20 @@
         function findAllPaths(graph, start, validNodes, end = null, path = [], latency = 0, visited = new Set()) {
             path = [...path, start];
             visited.add(start);
-
             if (end && start === end) {
                 return [{ path, latency }];
             }
-
             const neighbors = graph[start] || [];
             let paths = [];
-
             for (const { node, latency: edgeLatency } of neighbors) {
                 if (!visited.has(node)) {
                     const newPaths = findAllPaths(graph, node, validNodes, end, path, latency + edgeLatency, new Set(visited));
                     paths = paths.concat(newPaths);
                 }
             }
-
             if (!end && path.length > 1) {
                 paths.push({ path, latency });
             }
-
             return paths;
         }
 
@@ -196,10 +181,11 @@
             for (let i = 0; i < path.length - 1; i++) {
                 const s = path[i];
                 const t = path[i + 1];
-                link.filter(d =>
-                    (d.source.id === s && d.target.id === t) ||
-                    (d.source.id === t && d.target.id === s)
-                ).classed(className, true);
+                link.filter(d => {
+                    const sid = typeof d.source === 'string' ? d.source : d.source.id;
+                    const tid = typeof d.target === 'string' ? d.target : d.target.id;
+                    return (sid === s && tid === t) || (sid === t && tid === s);
+                }).classed(className, true);
             }
         }
     </script>
