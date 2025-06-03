@@ -3,7 +3,7 @@ POST BODY:
 {
     "order_id": "ORD12347",
     "response_date_time": "2025-06-02T14:30:00Z",
-    "response_text": "Network plan for Riyadh to Frakfurt is found with Verizon5G, STC local MON, COLT Glbal MON to reach GameServer at AWS Edge at Franfurt Region with low latency",
+    "response_text": "Player Console → gNodeB_02 Verizon → R2_verizon → R2_STC_cisco → R1_STC_cisco → R1_colt → R1_AWS → GS2_AWS (3.5ms)",
     "response_by": "Cognizant",
     "category": "Best Path"
 }  
