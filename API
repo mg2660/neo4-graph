@@ -1,0 +1,10 @@
+https://cognizantdemo4.service-now.com/api/x_gtsip_agenticai/network/nqmetric
+POST BODY: 
+{
+    "order_id": "ORD12347",
+    "response_date_time": "2025-06-02T14:30:00Z",
+    "response_text": "Network plan for Riyadh to Frakfurt is found with Verizon5G, STC local MON, COLT Glbal MON to reach GameServer at AWS Edge at Franfurt Region with low latency",
+    "response_by": "Cognizant",
+    "category": "Best Path"
+}  
+ 
