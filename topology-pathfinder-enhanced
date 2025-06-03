@@ -197,6 +197,23 @@ d3.json("http://localhost:3000/api/graph").then(data => {
     dfs(src, dst, new Set(), [src], 0);
     return allPaths.sort((a, b) => a.latency - b.latency).slice(0, k);
   }
+  function sendPathsToServer(best, alternatives) {
+  fetch("http://localhost:3000/api/routes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bestPath: best,
+      alternativePaths: alternatives
+    })
+  }).then(res => {
+    if (!res.ok) {
+      console.error("Failed to send paths to server");
+    }
+  }).catch(err => {
+    console.error("Error sending paths:", err);
+  });
+}
+
 
   function highlightPaths(paths) {
   const colors = ["#00ffff", "#ffa500", "#ff00ff"];
@@ -242,42 +259,49 @@ d3.json("http://localhost:3000/api/graph").then(data => {
   ).join("<br>");
 }
 
+document.getElementById("find-path").addEventListener("click", () => {
+  const src = document.getElementById("source-node").value.trim();
+  const dst = document.getElementById("target-node").value.trim();
 
-  document.getElementById("find-path").addEventListener("click", () => {
-    const src = document.getElementById("source-node").value.trim();
-    const dst = document.getElementById("target-node").value.trim();
+  if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+    document.getElementById("path-result").innerText = "Invalid source or destination.";
+    return;
+  }
 
-    if (!nodeMap.has(src) || !nodeMap.has(dst)) {
-      document.getElementById("path-result").innerText = "Invalid source or destination.";
-      return;
-    }
+  const results = findKShortestPaths(src, dst, 1);
+  if (results.length === 0) {
+    document.getElementById("path-result").innerText = "No path found.";
+    return;
+  }
 
-    const results = findKShortestPaths(src, dst, 1);
-    if (results.length === 0) {
-      document.getElementById("path-result").innerText = "No path found.";
-      return;
-    }
+  const best = results[0]; // includes both path and latency
+  sendPathsToServer(best, []); // No alternatives
 
-    document.getElementById("path-result").innerHTML = highlightPaths(results);
-  });
+  document.getElementById("path-result").innerHTML = highlightPaths(results);
+});
 
-  document.getElementById("find-alternatives").addEventListener("click", () => {
-    const src = document.getElementById("source-node").value.trim();
-    const dst = document.getElementById("target-node").value.trim();
+document.getElementById("find-alternatives").addEventListener("click", () => {
+  const src = document.getElementById("source-node").value.trim();
+  const dst = document.getElementById("target-node").value.trim();
 
-    if (!nodeMap.has(src) || !nodeMap.has(dst)) {
-      document.getElementById("path-result").innerText = "Invalid source or destination.";
-      return;
-    }
+  if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+    document.getElementById("path-result").innerText = "Invalid source or destination.";
+    return;
+  }
 
-    const results = findKShortestPaths(src, dst, 3);
-    if (results.length === 0) {
-      document.getElementById("path-result").innerText = "No path found.";
-      return;
-    }
+  const results = findKShortestPaths(src, dst, 3);
+  if (results.length === 0) {
+    document.getElementById("path-result").innerText = "No path found.";
+    return;
+  }
 
-    document.getElementById("path-result").innerHTML = highlightPaths(results);
-  });
+  const best = results[0];
+  const alternatives = results.slice(1);
+  sendPathsToServer(best, alternatives);
+
+  document.getElementById("path-result").innerHTML = highlightPaths(results);
+});
+
 
   document.getElementById("reset-path").addEventListener("click", () => {
     document.getElementById("source-node").value = "";
