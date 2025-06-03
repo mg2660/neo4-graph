@@ -199,6 +199,12 @@ d3.json("http://localhost:3000/api/graph").then(data => {
   }
 
   function sendPathsToServer(best, alternatives) {
+  const generateOrderId = () => {
+  const now = Date.now().toString().slice(-5); // last 6 digits of timestamp
+  return "ORD" + now; // e.g., ORD123456
+  };
+
+
   const formatPathText = (paths) => {
     return paths.map(p => {
       const labeledPath = p.path.map(n =>
@@ -213,7 +219,7 @@ d3.json("http://localhost:3000/api/graph").then(data => {
   const responseText = `Best Path: ${bestText}` + (altText ? ` Alternative Paths: ${altText}` : "");
 
   const payload = {
-    order_id: "ORD12347",
+    order_id: generateOrderId(),
     response_date_time: new Date().toISOString(),
     response_text: responseText,
     response_by: "Cognizant",
@@ -306,7 +312,7 @@ document.getElementById("find-path").addEventListener("click", () => {
   const best = results[0]; // includes both path and latency
   sendPathsToServer(best, []); // No alternatives
 
-  document.getElementById("path-result").innerHTML = highlightPaths(results);
+  document.getElementById("path-result").innerHTML = highlightPaths([best]);
 });
 
 document.getElementById("find-alternatives").addEventListener("click", () => {
