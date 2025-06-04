@@ -1,541 +1,358 @@
-
-import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-
-@Component({
-  selector: 'app-root',
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.css']
-})
-export class AppComponent implements OnInit {
-  title = 'DSM';
-  chatWindowOpen = false;
-  messages: { text: string; sender: string }[] = [
-    { text: "Hello <Customer name>! I'm your dedicated GameX assistant. How can I assist you, today?", sender: "bot" },
-  ];
-  newMessage = '';
-  apiResponse: any;
-  eventDetails: any = {};
-  awaitingResponse: string | null = null;
-  confirmationShown: boolean = false;
-  processing = false;
-  isLoading = false;
-
-  eventTypeAttempts = 0;
-  @ViewChild('chatBody') chatBody!: ElementRef;
-
-  constructor(private http: HttpClient) {}
-
-  ngOnInit(): void {}
-
-  scrollUp() {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  toggleChatWindow() {
-    this.chatWindowOpen = !this.chatWindowOpen;
-    setTimeout(() => this.scrollToBottom(), 100);
-  }
-
-  sendMessage() {
-    if (this.newMessage.trim()) {
-      this.messages.push({ text: this.newMessage, sender: "user" });
-      if (this.awaitingResponse) {
-        this.handleMissingInfo(this.newMessage.trim().toLowerCase());
-      } else {
-        this.handlePredefinedMessages(this.newMessage.trim().toLowerCase());
-      }
-      this.newMessage = '';
-      this.scrollToBottom();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Graph Latency Path Finder</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #0f0;
     }
-  }
-
-  handlePredefinedMessages(message: string) {
-    let response = '';
-    switch (message) {
-      case 'hi':
-        response = 'Hi there! How can I assist you today?';
-        break;
-      case 'bye':
-        response = 'Goodbye! Have a great day!';
-        break;
-      case 'how are you':
-        response = 'I am just a bot, but I am here to help you!';
-        break;
-      case 'what is your name':
-        response = 'I am GameXBot, your friendly assistant!';
-        break;
-      case 'help':
-        response = 'Sure! I can assist you with gaming, tournaments. What do you need help with?';
-        break;
-      case 'get intent':
-      case 'intent':
-      case 'show intent':
-        this.getRecentIntent();
-        return;
-      case 'show network paths':
-      case 'show network':
-      case 'show routes':
-      case 'get routes':
-      case 'get paths':
-        this.getNetworkPaths();
-        return;
-      default:
-        this.extractEventDetails(message);
-        return;
+    .node {
+      stroke: #fff;
+      stroke-width: 1.5px;
     }
-    this.messages.push({ text: response, sender: "bot" });
-    this.scrollToBottom();
-  }
-
-  extractEventDetails(message: string) {
-    const eventTypeRegex = /(?:host|organize).*?(\w+)\s+event/i;
-    const eventTypeMatch = message.match(eventTypeRegex);
-    if (eventTypeMatch) {
-      const eventType = eventTypeMatch[1].toLowerCase();
-      if (eventType !== 'gaming') {
-        this.messages.push({
-          text: "Sorry, we cannot host " + eventType + " events here.YOu can only host gaming events here",
-          sender: "bot"
-        });
-        this.scrollToBottom();
-        return;
-      }
+    .link {
+      stroke-width: 2;
     }
-    const locationRegex = /(?:in|on|at)\s+([a-zA-Z\s]+)/i;
-    const dateRegex = /(\d{1,2}(?:st|nd|rd|th)?(?:\s+|\/|-)(?:[a-zA-Z]+|\d{1,2})(?:\s+|\/|-)\d{4})/gi;
-    const playerCountRegex = /(?:for|with)\s+(\d+)\s+players?/i;
-
-    const locationMatch = message.match(locationRegex);
-    const dateMatches = message.match(dateRegex);
-    const playerCountMatch = message.match(playerCountRegex);
-
-    if (locationMatch) {
-      const location = locationMatch[1].trim();
-      if (location.toLowerCase() !== 'riyadh') {
-        this.awaitingResponse = null;
-        this.messages.push({
-          text: "Sorry! Currently we are not available in this location.",
-          sender: "bot"
-        });
-        this.scrollToBottom();
-        return;
-      }
-      this.eventDetails.location = location;
+    .tooltip {
+      position: absolute;
+      background: #111;
+      border: 1px solid #0f0;
+      padding: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      color: #0f0;
     }
-
-    if (dateMatches && dateMatches.length >= 2) {
-      this.eventDetails.startDate = this.formatDateToDDMMYYYY(dateMatches[0]);
-      this.eventDetails.endDate = this.formatDateToDDMMYYYY(dateMatches[1]);
-    } else if (dateMatches && dateMatches.length === 1) {
-      if (!this.eventDetails.startDate) {
-        this.eventDetails.startDate = this.formatDateToDDMMYYYY(dateMatches[0]);
-      } else if (!this.eventDetails.endDate) {
-        this.eventDetails.endDate = this.formatDateToDDMMYYYY(dateMatches[0]);
-      }
+    .labels text {
+      paint-order: stroke;
+      stroke: black;
+      stroke-width: 2px;
+      fill: #0f0;
     }
-
-    if (playerCountMatch) {
-      const count = parseInt(playerCountMatch[1], 10);
-      if (count > 1000) {
-        this.messages.push({
-          text: "Whoa! That’s a full-blown battle royale! We can only host up to 1000 players. Ready to trim the squad?",
-          sender: "bot"
-        });
-        this.scrollToBottom();
-        return;
-      }
-      this.eventDetails.playerCount = playerCountMatch[1];
+    .glow {
+      filter: url(#glow);
     }
+  </style>
+</head>
+<body>
 
-    if (!this.eventDetails.location) {
-      this.awaitingResponse = 'location';
-      this.messages.push({
-        text: "Understood. You're looking to host a gaming event. To ensure we set up everything perfectly, could you please confirm the primary location for your event?",
-        sender: "bot"
-      });
-    } else if (!this.eventDetails.startDate && !this.eventDetails.endDate) {
-      this.awaitingResponse = 'startAndEndDate';
-      this.messages.push({
-        text: "Excellent! Riyadh it is. Now, to help us provision the ideal network slice, what is the start date for your event, and when will it conclude? Please provide both (e.g., DD/MM/YYYY - DD/MM/YYYY)",
-        sender: "bot"
-      });
-    } else if (!this.eventDetails.startDate) {
-      this.awaitingResponse = 'startDate';
-      this.messages.push({
-        text: "Thanks! Now, could you please provide the start date for the event?",
-        sender: "bot"
-      });
-    } else if (!this.eventDetails.endDate) {
-      this.awaitingResponse = 'endDate';
-      this.messages.push({
-        text: "Got it. Could you now provide the end date for the event?",
-        sender: "bot"
-      });
-    } else if (!this.eventDetails.playerCount) {
-      this.awaitingResponse = 'playerCount';
-      this.messages.push({
-        text: "Could you tell me the estimated number of players you anticipate at peak?",
-        sender: "bot"
-      });
-    } else {
-      // Generate confirmation message
-      const confirmationMessage = `Alright, let's confirm your request:
-• Event Type: Gaming Event
-• Location: ${this.eventDetails.location}
-• Dates: ${this.eventDetails.startDate} - ${this.eventDetails.endDate}
-• Estimated Players: ${this.eventDetails.playerCount}
-Does this sound correct to you?`;
+<svg id="graph" style="width: 100vw; height: 100vh;">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
 
-      // Add bot confirmation message
-      this.messages.push({ sender: 'GameX Assistant', text: confirmationMessage });
-      this.confirmationShown = true;
+<div id="tooltip" class="tooltip" style="display: none;"></div>
 
-      // Send to API
-      this.awaitingResponse = 'confirmation';
-    }
+<div id="path-controls" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0;">
+  <label style="color:#0f0;">From:</label>
+  <input id="source-node" type="text" placeholder="e.g. Eve" />
+  <label style="color:#0f0; margin-left: 10px;">To:</label>
+  <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
+  <button id="find-path" style="margin-left: 10px;">Find Best Path</button>
+  <button id="find-alternatives" style="margin-left: 10px;">Alt Paths</button>
+  <button id="reset-path" style="margin-left: 10px;">Reset</button>
+</div>
 
-    this.scrollToBottom();
-  }
+<div id="path-result" style="position: absolute; top: 70px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0; color:#0f0; max-width: 400px;"></div>
 
-  getNetworkPaths() {
-    this.isLoading = true;
+<script>
+d3.json("http://localhost:3000/api/graph").then(data => {
+  const nodes = data.nodes;
+  const links = data.links;
 
-    this.http.get<any>('https://cognizantdemo4.service-now.com/api/x_gtsip_agenticai/network/nqmetric').subscribe({
-      next: (response) => {
-        const result = response.result;
+  const svg = d3.select("svg");
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const tooltip = d3.select("#tooltip");
+  const container = svg.append("g");
+  const zoom = d3.zoom().scaleExtent([0.1, 4]).on("zoom", event => container.attr("transform", event.transform));
+  svg.call(zoom);
 
-        const responseText = result?.response_text || "No response text available.";
-        const orderId = result?.order_id || "N/A";
-        const responseTime = result?.response_date_time || "Unknown";
+  const getNodeColor = node => {
+    const status = node.properties?.alarm_status;
+    if (status === "RED") return "#ff0000";
+    if (status === "AMBER") return "#ffbf00";
+    return "#0f0";
+  };
 
-        // Extract and format best and alternative paths
-        const [bestPart, altPart] = responseText.split("Alternative Paths:");
-        const bestFormatted = bestPart?.replace("Best Path:", "• <strong>Best Path:</strong>").trim();
-        const altFormatted = altPart
-                            ? altPart.split(" | ").map((path: string) => `• ${path.trim()}`).join("<br>")
-                            : "• No alternative paths found.";
-
-
-        const message = `
-          ⏱️ <strong>Response Time:</strong> ${new Date(responseTime).toLocaleString()}<br><br>
-          📡 <strong>Network Path Info:</strong><br>
-          ${bestFormatted}<br><br>
-          🔁 <strong>Alternative Paths:</strong><br>
-          ${altFormatted}
-        `;
-
-        this.messages.push({ text: message, sender: "GameX Assistant" });
-        this.scrollToBottom();
-      },
-      error: () => {
-        this.messages.push({
-          text: "⚠️ Unable to fetch network paths from ServiceNow. Please try again later.",
-          sender: "GameX Assistant"
-        });
-        this.scrollToBottom();
-      },
-      complete: () => {
-        this.isLoading = false;
-      }
-    });
-  }
-
-
-  handleMissingInfo(userInput: string) {
-    if (!this.awaitingResponse) return;
-
-    const dateRegex = /(\d{2}\/\d{2}\/\d{4})/g;
-    const dates = userInput.match(dateRegex);
-
-    switch (this.awaitingResponse) {
-      case 'confirmation':
-        if (userInput.toLowerCase() === 'yes') {
-          this.awaitingResponse = null;
-
-          // First message
-          this.messages.push({
-            text: "Fantastic! Just a moment while our system quickly performs a feasibility check and reserves the necessary network resources. This ensures we can deliver the ultra-low latency and high bandwidth your event demands.",
-            sender: "GameX Assistant"
-          });
-          this.scrollToBottom();
-
-          // Second message after 10 seconds
-          setTimeout(() => {
-            this.messages.push({
-              text: "Great news! The network capacity is available, and your request can be fulfilled. For rapid activation, we can provision these services live for your event. Do you confirm you're ready to place the order and would you like to pre-activate the request?",
-              sender: "GameX Assistant"
-            });
-            this.awaitingResponse = 'finalConfirmation'; // Wait for final yes
-            this.scrollToBottom();
-          }, 10000);
-        } else {
-          this.messages.push({ text: "Please provide the correct details.", sender: "bot" });
-          this.awaitingResponse = null;
-        }
-        break;
-
-      case 'finalConfirmation':
-        if (userInput.toLowerCase() === 'yes') {
-          this.awaitingResponse = null;
-          this.createQuote(); // Proceed to create the quote
-        } else {
-          this.messages.push({
-            text: "No problem! Let me know if you'd like to make any changes or need more time.",
-            sender: "GameX Assistant"
-          });
-          this.awaitingResponse = null;
-          this.scrollToBottom();
-        }
-        break;
-
-      case 'location':
-        this.eventDetails.location = userInput;
-        break;
-
-      case 'startAndEndDate':
-        if (dates && dates.length >= 2) {
-          this.eventDetails.startDate = this.formatDateToDDMMYYYY(dates[0]);
-          this.eventDetails.endDate = this.formatDateToDDMMYYYY(dates[1]);
-          this.awaitingResponse = null;
-        } else if (dates && dates.length === 1) {
-          this.eventDetails.startDate = this.formatDateToDDMMYYYY(dates[0]);
-          this.awaitingResponse = 'endDate';
-          this.messages.push({
-            text: "Thanks! Now, could you please provide the end date for the event?",
-            sender: "bot"
-          });
-          this.scrollToBottom();
-          return;
-        } else {
-          this.messages.push({
-            text: "I couldn't understand the dates. Please provide them in the format DD/MM/YYYY.",
-            sender: "bot"
-          });
-          this.scrollToBottom();
-          return;
-        }
-        break;
-
-      case 'startDate':
-        this.eventDetails.startDate = this.formatDateToDDMMYYYY(userInput);
-        break;
-
-      case 'endDate':
-        this.eventDetails.endDate = this.formatDateToDDMMYYYY(userInput);
-        break;
-
-      case 'playerCount':
-        const count = parseInt(userInput, 10);
-        if (count > 1000) {
-          this.messages.push({
-            text: "Sorry, the number of players cannot exceed 1000. Please provide a lower number of participants.",
-            sender: "bot"
-          });
-          this.scrollToBottom();
-          return;
-        }
-        this.eventDetails.playerCount = userInput;
-        break;
-    }
-
-    this.awaitingResponse = null;
-    if (!this.confirmationShown) {
-      this.extractEventDetails('');
-    }
-  }
-
-  formatDateToDDMMYYYY(dateStr: string): string | null {
-    const months: { [key: string]: string } = {
-      january: '01', february: '02', march: '03', april: '04',
-      may: '05', june: '06', july: '07', august: '08',
-      september: '09', october: '10', november: '11', december: '12'
-    };
-
-    const parts = dateStr.toLowerCase().replace(/(st|nd|rd|th)/g, '').split(/[\s/-]+/);
-    if (parts.length === 3) {
-      let [day, month, year] = parts;
-
-      if (isNaN(Number(month))) {
-        month = months[month.toLowerCase()];
-      }
-
-      if (day.length === 1) day = '0' + day;
-      if (month && year && day) {
-        return `${day}/${month}/${year}`;
-      }
-    }
-
-    return null;
-  }
-
-  createQuote() {
-    const orderId = this.generateRandomId('ORD');
-    const requestBody = {
-      orderId: orderId,
-      queryId: this.generateRandomId('ORDL'),
-      location: this.eventDetails.location,
-      playerCount: this.eventDetails.playerCount,
-      startDate: this.eventDetails.startDate,
-      endDate: this.eventDetails.endDate,
-      status: "New"
-    };
-
-    const headers = new HttpHeaders({
-      'Authorization': 'Basic ' + btoa('tmfcatalyst:Cts@2025'),
-      'Content-Type': 'application/json'
+  const link = container.append("g").attr("class", "links")
+    .selectAll("line")
+    .data(links)
+    .enter().append("line")
+    .attr("class", "link")
+    .style("stroke", d => {
+      const statusA = d.source.properties?.alarm_status;
+      const statusB = d.target.properties?.alarm_status;
+      if (statusA === "RED" || statusB === "RED") return "#ff0000";
+      if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
+      return "#0f0";
     });
 
-    this.http.post('/api/api/x_gtsip_agenticai/intentquery/query', requestBody, { headers })
-      .subscribe({
-        next: () => {
-          this.messages.push({
-            text: `Thanks, your Order ID is: ${orderId}. Your network services are now being provisioned automatically across our converged fixed, mobile, and cloud domains. Our autonomous network is setting up your dedicated gaming slice right now – aiming for zero-wait and zero-touch delivery.`,
-            sender: "GameX Assistant"
-          });
-          this.scrollToBottom();
-          this.getQuoteDetails(orderId); // Fetch quote details after creating the quote
-        },
-        error: () => {
-          this.messages.push({
-            text: "Failed to create quote. Please try again later.",
-            sender: "bot"
-          });
-          this.scrollToBottom();
-        }
-      });
-  }
+  const node = container.append("g").attr("class", "nodes")
+    .selectAll("circle")
+    .data(nodes)
+    .enter().append("circle")
+    .attr("r", 12)
+    .attr("fill", getNodeColor)
+    .attr("class", "node")
+    .call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended))
+    .on("mouseover", (event, d) => {
+      tooltip.style("display", "block")
+        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+        .html(`<strong>${d.id}</strong><br>${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
+    })
+    .on("mouseout", () => tooltip.style("display", "none"));
 
-  getQuoteDetails(orderId: string) {
-    const headers = new HttpHeaders({
-      'Authorization': 'Basic ' + btoa('tmfcatalyst:Cts@2025'),
-      'Content-Type': 'application/json'
+  const labels = container.append("g").attr("class", "labels")
+    .selectAll("text")
+    .data(nodes)
+    .enter().append("text")
+    .attr("dy", -10)
+    .attr("text-anchor", "middle")
+    .text(d => d.labels?.includes("PlayerConsole") ? "PlayerConsole" : d.id)
+    .style("font-size", "14px")
+    .style("font-weight", "bold")
+    .style("fill", "#0f0");
+
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .on("tick", () => {
+      link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      node.attr("cx", d => d.x).attr("cy", d => d.y);
+      labels.attr("x", d => d.x).attr("y", d => d.y);
     });
 
-    this.http.get('/api/api/x_gtsip_agenticai/intentquery/querylast', { headers })
-      .subscribe({
-        next: (response: any) => {
-          const result = response.result;
-          const startDate = result.startDate ? this.formatDateToDDMMYYYY(result.startDate) : 'N/A';
-          const endDate = result.endDate ? this.formatDateToDDMMYYYY(result.endDate) : 'N/A';
-          const status = result.status || 'N/A';
-          const location = result.location || 'N/A';
-          const playerCount = parseInt(result.playerCount, 10);
-
-          this.messages.push({
-            text: `Success! Your dedicated network for the ${location} gaming event (${startDate} - ${endDate}) is now fully provisioned and active.
-• Order ID: ${orderId}
-• Activation Status: ${status}
-• Event Dates: ${startDate} - ${endDate}`,
-            sender: "GameX Assistant"
-          });
-
-          // Call to show network quality
-          this.loadNetworkQualityInfo(playerCount);
-
-          this.scrollToBottom();
-        },
-        error: () => {
-          this.messages.push({
-            text: "Failed to fetch quote details. Please try again later.",
-            sender: "bot"
-          });
-          this.scrollToBottom();
-        }
-      });
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null; d.fy = null;
   }
 
-  loadNetworkQualityInfo(playerCount: number) {
-    this.http.get('/assets/service_intent.json').subscribe((data: any) => {
-      let qualityInfo: { bandwidth: string; latency: string; packetLoss: string } | null = null;
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const edgeMap = new Map();
 
-      if (playerCount <= 500) {
-        qualityInfo = data["0-500"].networkQuality;
-      } else if (playerCount <= 1000) {
-        qualityInfo = data["500-1000"].networkQuality;
+  links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    let latency = 0;
+    const rawLatency = link.properties?.latency;
+    if (typeof rawLatency === "string") {
+      const match = rawLatency.match(/[\d.]+/);
+      if (match) latency = parseFloat(match[0]);
+    } else if (typeof rawLatency === "number") {
+      latency = rawLatency;
+    }
+
+    edgeMap.set(`${sourceId}->${targetId}`, { latency, link });
+    edgeMap.set(`${targetId}->${sourceId}`, { latency, link });
+  });
+
+  function findKShortestPaths(src, dst, k) {
+    const allPaths = [];
+
+    function dfs(current, target, visited, path, totalLatency) {
+      if (allPaths.length >= k) return;
+      if (current === target) {
+        allPaths.push({ path: [...path], latency: totalLatency });
+        return;
       }
 
-      if (qualityInfo) {
-        const message = `Here’s your network quality:
-• Bandwidth: ${qualityInfo.bandwidth}
-• Latency: ${qualityInfo.latency}
-• Packet Loss: ${qualityInfo.packetLoss}`;
-        this.messages.push({ text: message, sender: "GameX Assistant" });
-        this.scrollToBottom();
+      visited.add(current);
+
+      for (const [key, { latency }] of edgeMap.entries()) {
+        const [from, to] = key.split("->");
+        if (from === current && !visited.has(to) && nodeMap.get(to).properties?.alarm_status !== "RED") {
+          path.push(to);
+          dfs(to, target, visited, path, totalLatency + latency);
+          path.pop();
+        }
       }
-    });
-  }
 
-  getRecentIntent() {
-    const headers = new HttpHeaders({
-      'Authorization': 'Basic ' + btoa('tmfcatalyst:Cts@2025'),
-      'Content-Type': 'application/json'
-    });
-
-    this.http.get('/api/api/x_gtsip_agenticai/intent_ai/intentrecent', { headers })
-      .subscribe({
-        next: (response: any) => {
-          this.apiResponse = response;
-          const intentId = response?.result?.number || 'INT-XXXXX';
-
-          const messages = [
-            "Validating your intent...Hang tight! We're making sure everything checks out. ✅",
-            "Provisioning your intent into the network...We're setting things up behind the scenes. Almost there! ⚙️",
-            "Intent successfully provisioned! Everything is in place and ready to go.",
-            "Your intent is now live and ready for service! You're all set to dive in.",
-            `Intent ID: ${intentId} Success! Your intent is active and ready to use.`,
-            "Enjoy your gaming experience! Let the fun begin! 🎮🔥",
-            "Need anything else? I'm here to help—just say the word!"
-          ];
-
-          this.displayMessagesWithDelay(messages, 10000); // 10 seconds delay
-        },
-        error: () => {
-          this.messages.push({ text: "Failed to fetch recent intent. Please try again later.", sender: "bot" });
-          this.scrollToBottom();
-        }
-      });
-  }
-
-  displayMessagesWithDelay(messages: string[], delay: number) {
-    this.processing = true;
-    this.scrollToBottom();
-
-    messages.forEach((msg, index) => {
-      setTimeout(() => {
-        if (index === messages.length - 1) {
-          this.processing = false;
-        }
-        this.messages.push({ text: msg, sender: "bot" });
-        this.scrollToBottom();
-      }, delay * index);
-    });
-  }
-
-  generateRandomId(prefix: string): string {
-    return `${prefix}${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
-  }
-
-  handleKeyPress(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      this.sendMessage();
+      visited.delete(current);
     }
+
+    dfs(src, dst, new Set(), [src], 0);
+    return allPaths.sort((a, b) => a.latency - b.latency).slice(0, k);
   }
 
-  formatMessage(text: string): string {
-    return text;
-  }
+  function sendPathsToServer(best, alternatives) {
+  const generateOrderId = () => {
+  const now = Date.now().toString().slice(-5); // last 6 digits of timestamp
+  return "ORD" + now; // e.g., ORD123456
+  };
 
-  scrollToBottom() {
-    try {
-      setTimeout(() => {
-        if (this.chatBody && this.chatBody.nativeElement) {
-          this.chatBody.nativeElement.scrollTop = this.chatBody.nativeElement.scrollHeight;
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Scroll error:', err);
+
+  const formatPathText = (paths) => {
+    return paths.map(p => {
+      const labeledPath = p.path.map(n =>
+        nodeMap.get(n)?.labels?.includes("PlayerConsole") ? "Player Console" : n
+      );
+      return `${labeledPath.join(" → ")} (${p.latency}ms)`;
+    });
+  };
+
+  const bestText = formatPathText([best])[0];
+  const altText = formatPathText(alternatives).join(" | ");
+  const responseText = `Best Path: ${bestText}` + (altText ? ` Alternative Paths: ${altText}` : "");
+
+  const payload = {
+    order_id: generateOrderId(),
+    response_date_time: new Date().toISOString(),
+    response_text: responseText,
+    response_by: "Cognizant",
+    category: "5G Topology routes"
+  };
+
+  fetch("https://cognizantdemo4.service-now.com/api/x_gtsip_agenticai/network/nqmetric", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }).then(res => {
+    if (!res.ok) {
+      console.error("Failed to send to ServiceNow:", res.status);
     }
-  }
+    return res.json();
+  }).then(data => {
+    console.log("ServiceNow response:", data);
+  }).catch(err => {
+    console.error("Error sending to ServiceNow:", err);
+  });
 }
 
+
+
+
+  function highlightPaths(paths) {
+  const colors = ["#00ffff", "#ffa500", "#ff00ff"];
+  const edgeKeysPerPath = paths.map(({ path }) => {
+    const keys = new Set();
+    for (let i = 0; i < path.length - 1; i++) {
+      keys.add(`${path[i]}->${path[i+1]}`);
+      keys.add(`${path[i+1]}->${path[i]}`);
+    }
+    return keys;
+  });
+
+  d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+    const sourceStatus = d.source.properties?.alarm_status;
+    const targetStatus = d.target.properties?.alarm_status;
+    if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+    if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+    return "#0f0";
+  });
+
+  // Apply glow and color per path
+  edgeKeysPerPath.forEach((keys, i) => {
+    d3.selectAll("line")
+      .filter(d => keys.has(`${d.source.id}->${d.target.id}`))
+      .style("stroke", colors[i % colors.length])
+      .style("stroke-width", 4)
+      .attr("class", "glow");
+  });
+
+  // Highlight nodes
+  d3.selectAll("circle")
+    .style("stroke", d => {
+      if (paths.some(p => p.path.includes(d.id))) return "#fff";
+      return "#0f0";
+    })
+    .style("stroke-width", d => {
+      if (paths.some(p => p.path.includes(d.id))) return 3;
+      return 1.5;
+    });
+
+  return paths.map((p, i) => {
+  const pathWithLabels = p.path.map(n =>
+    nodeMap.get(n)?.labels?.includes("PlayerConsole") ? "PlayerConsole" : n
+  );
+  return `<span style="color:${colors[i]}">${pathWithLabels.join(" → ")} (${p.latency}ms)</span>`;
+}).join("<br>");
+}
+
+document.getElementById("find-path").addEventListener("click", () => {
+  const src = document.getElementById("source-node").value.trim();
+  const dst = document.getElementById("target-node").value.trim();
+
+  if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+    document.getElementById("path-result").innerText = "Invalid source or destination.";
+    return;
+  }
+
+  const results = findKShortestPaths(src, dst, 1);
+  if (results.length === 0) {
+    document.getElementById("path-result").innerText = "No path found.";
+    return;
+  }
+
+  const best = results[0]; // includes both path and latency
+  sendPathsToServer(best, []); // No alternatives
+
+  document.getElementById("path-result").innerHTML = highlightPaths([best]);
+});
+
+document.getElementById("find-alternatives").addEventListener("click", () => {
+  const src = document.getElementById("source-node").value.trim();
+  const dst = document.getElementById("target-node").value.trim();
+
+  if (!nodeMap.has(src) || !nodeMap.has(dst)) {
+    document.getElementById("path-result").innerText = "Invalid source or destination.";
+    return;
+  }
+
+  const results = findKShortestPaths(src, dst, 3);
+  if (results.length === 0) {
+    document.getElementById("path-result").innerText = "No path found.";
+    return;
+  }
+
+  const best = results[0];
+  const alternatives = results.slice(1);
+  sendPathsToServer(best, alternatives);
+
+  document.getElementById("path-result").innerHTML = highlightPaths(results);
+});
+
+
+  document.getElementById("reset-path").addEventListener("click", () => {
+    document.getElementById("source-node").value = "";
+    document.getElementById("target-node").value = "";
+    document.getElementById("path-result").innerText = "";
+    d3.selectAll("line").style("stroke-width", 2).style("stroke", d => {
+      const sourceStatus = d.source.properties?.alarm_status;
+      const targetStatus = d.target.properties?.alarm_status;
+      if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+      if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
+    d3.selectAll("circle").style("stroke", "#fff").style("stroke-width", 1.5);
+  });
+});
+</script>
+
+</body>
+</html>
