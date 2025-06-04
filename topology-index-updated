@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Graph Visualization</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #0f0;
+    }
+    .node {
+      stroke: #fff;
+      stroke-width: 1.5px;
+    }
+    .link {
+      stroke-width: 2;
+    }
+    .tooltip {
+      position: absolute;
+      background: #111;
+      border: 1px solid #0f0;
+      padding: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      color: #0f0;
+    }
+    .labels text {
+      paint-order: stroke;
+      stroke: black;
+      stroke-width: 2px;
+      fill: #0f0;
+    }
+  </style>
+</head>
+<body>
+
+<svg id="graph" style="width: 100vw; height: 100vh;"></svg>
+<div id="tooltip" class="tooltip" style="display: none;"></div>
+
+<script>
+d3.json("http://localhost:3000/api/graph")
+  .then(data => {
+    const nodes = data.nodes;
+    const links = data.links;
+
+    const svg = d3.select("svg");
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const tooltip = d3.select("#tooltip");
+
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (event) => {
+        container.attr("transform", event.transform);
+      });
+    svg.call(zoom);
+
+    const container = svg.append("g");
+
+    // Determine color based on alarm_status
+    const getNodeColor = node => {
+      const status = node.properties?.alarm_status;
+      if (status === "RED") return "#ff0000";
+      if (status === "AMBER") return "#ffbf00";
+      if (status === "GREEN") return "#0f0";
+      return "#0f0";
+    };
+
+    const link = container.append("g")
+        .attr("class", "links")
+      .selectAll("line")
+      .data(links)
+      .enter().append("line")
+      .attr("class", "link")
+      .style("stroke", d => {
+        const sourceStatus = d.source.properties?.alarm_status;
+        const targetStatus = d.target.properties?.alarm_status;
+
+        if (sourceStatus === "RED" || targetStatus === "RED") return "#ff0000";
+        if (sourceStatus === "AMBER" || targetStatus === "AMBER") return "#ffbf00";
+        return "#0f0";
+      })
+      .style("stroke-width", 2);
+
+    link.on("mouseover", (event, d) => {
+      tooltip.style("display", "block")
+        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+        .html(`<strong>Link</strong><br>
+               Type: ${d.type}<br>
+               Source: ${d.source.id}<br>
+               Target: ${d.target.id}<br>
+               ${Object.entries(d.properties || {})
+                 .map(([k, v]) => `${k}: ${v}`).join("<br>")}`);
+    })
+    .on("mouseout", () => tooltip.style("display", "none"));
+
+    const linkLabels = container.append("g")
+        .attr("class", "link-labels")
+      .selectAll("text")
+      .data(links)
+      .enter().append("text")
+        .attr("dy", ".35em")
+        .attr("text-anchor", "middle")
+        .style("font-size", "6px")
+        .style("fill", "#66ff66")
+        .style("font-weight", "normal")
+        .text(d => d.type);
+
+    const node = container.append("g")
+        .attr("class", "nodes")
+      .selectAll("circle")
+      .data(nodes)
+      .enter().append("circle")
+        .attr("r", d => {
+          const smallLabels = ["Users", "GameStream", "Path"];
+          return smallLabels.includes(d.id) || smallLabels.includes(d.labels[0]) ? 6 : 14;
+        })
+        .attr("fill", d => getNodeColor(d))
+        .attr("class", "node")
+        .call(d3.drag()
+          .on("start", dragstarted)
+          .on("drag", dragged)
+          .on("end", dragended))
+        .on("mouseover", (event, d) => {
+          tooltip.style("display", "block")
+                 .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+                 .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+                 .html(`<strong>${d.id}</strong><br>${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
+        })
+        .on("mouseout", () => tooltip.style("display", "none"));
+
+    const labels = container.append("g")
+        .attr("class", "labels")
+      .selectAll("text")
+      .data(nodes)
+      .enter().append("text")
+        .attr("dy", -10)
+        .attr("text-anchor", "middle")
+        .text(d => d.id)
+        .style("font-size", "12px")
+        .style("font-weight", "normal")
+        .style("fill", "#0f0");
+
+    const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .on("tick", ticked);
+
+        function ticked() {
+  link
+    .attr("x1", d => d.source.x)
+    .attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x)
+    .attr("y2", d => d.target.y)
+    .style("stroke", d => {
+      const getStatus = n => n.properties?.alarm_status;
+      const statusA = getStatus(d.source);
+      const statusB = getStatus(d.target);
+      if (statusA === "RED" || statusB === "RED") return "#ff0000";
+      if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
+      return "#0f0";
+    });
+
+  node
+    .attr("cx", d => d.x)
+    .attr("cy", d => d.y);
+
+  labels
+    .attr("x", d => d.x)
+    .attr("y", d => d.y);
+
+  linkLabels
+    .attr("x", d => (d.source.x + d.target.x) / 2)
+    .attr("y", d => (d.source.y + d.target.y) / 2);
+}
+
+
+    function dragstarted(event, d) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragended(event, d) {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+
+    window.addEventListener("resize", () => {
+      const newWidth = window.innerWidth;
+      const newHeight = window.innerHeight;
+      simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2));
+    });
+  })
+  .catch(error => {
+    console.error("Error loading graph data:", error);
+    d3.select("body").append("div")
+      .style("position", "absolute")
+      .style("top", "20px")
+      .style("left", "20px")
+      .style("background", "red")
+      .style("color", "white")
+      .style("padding", "10px")
+      .text("Error loading graph data. Check console for details.");
+  });
+</script>
+
+</body>
+</html>

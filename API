@@ -1,0 +1,10 @@
+https://cognizantdemo4.service-now.com/api/x_gtsip_agenticai/network/nqmetric
+POST BODY: 
+{
+    "order_id": "ORD12347",
+    "response_date_time": "2025-06-02T14:30:00Z",
+    "response_text": "Player Console → gNodeB_02 Verizon → R2_verizon → R2_STC_cisco → R1_STC_cisco → R1_colt → R1_AWS → GS2_AWS (3.5ms)",
+    "response_by": "Cognizant",
+    "category": "Best Path"
+}  
+ 
