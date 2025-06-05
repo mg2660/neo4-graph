@@ -57,9 +57,9 @@
 
 <div id="path-controls" style="position: absolute; top: 10px; left: 10px; z-index: 10; background: #111; padding: 10px; border: 1px solid #0f0;">
   <label style="color:#0f0;">From:</label>
-  <input id="source-node" type="text" placeholder="e.g. Eve" />
+  <select id="source-node"></select>
   <label style="color:#0f0; margin-left: 10px;">To:</label>
-  <input id="target-node" type="text" placeholder="e.g. GS1_AWS" />
+  <select id="target-node"></select>
   <button id="find-path" style="margin-left: 10px;">Find Best Path</button>
   <button id="find-alternatives" style="margin-left: 10px;">Alt Paths</button>
   <button id="reset-path" style="margin-left: 10px;">Reset</button>
@@ -88,17 +88,37 @@ d3.json("https://neo4-graph.onrender.com/api/graph").then(data => {
   };
 
   const link = container.append("g").attr("class", "links")
-    .selectAll("line")
-    .data(links)
-    .enter().append("line")
-    .attr("class", "link")
-    .style("stroke", d => {
-      const statusA = d.source.properties?.alarm_status;
-      const statusB = d.target.properties?.alarm_status;
-      if (statusA === "RED" || statusB === "RED") return "#ff0000";
-      if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
-      return "#0f0";
-    });
+  .selectAll("line")
+  .data(links)
+  .enter().append("line")
+  .attr("class", "link")
+  .style("stroke", d => {
+    const statusA = d.source.properties?.alarm_status;
+    const statusB = d.target.properties?.alarm_status;
+    if (statusA === "RED" || statusB === "RED") return "#ff0000";
+    if (statusA === "AMBER" || statusB === "AMBER") return "#ffbf00";
+    return "#0f0";
+  })
+  .style("stroke-width", 2)
+  .on("mouseover", (event, d) => {
+    const latency = d.properties?.latency || "N/A";
+    const bandwidth = d.properties?.bandwidth || "N/A";
+    const sourceId = d.source.id || d.source;
+    const targetId = d.target.id || d.target;
+
+    tooltip.style("display", "block")
+      .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+      .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+      .html(
+        `<strong>Connection</strong><br>
+         From: ${sourceId}<br>
+         To: ${targetId}<br>
+         Latency: ${latency}<br>
+         Bandwidth: ${bandwidth}`
+      );
+  })
+  .on("mouseout", () => tooltip.style("display", "none"));
+
 
   const node = container.append("g").attr("class", "nodes")
     .selectAll("circle")
@@ -111,13 +131,19 @@ d3.json("https://neo4-graph.onrender.com/api/graph").then(data => {
       .on("start", dragstarted)
       .on("drag", dragged)
       .on("end", dragended))
-    .on("mouseover", (event, d) => {
-      tooltip.style("display", "block")
-        .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
-        .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
-        .html(`<strong>${d.id}</strong><br>${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
-    })
-    .on("mouseout", () => tooltip.style("display", "none"));
+      .on("mouseover", (event, d) => {
+        tooltip.style("display", "block")
+      .style("left", Math.min(event.pageX + 10, window.innerWidth - 200) + "px")
+      .style("top", Math.min(event.pageY + 10, window.innerHeight - 100) + "px")
+      .html(`${d.id}
+${Object.entries(d.properties).map(([k,v]) => `${k}: ${v}`).join("<br>")}`);
+
+d3.select(event.currentTarget).attr("filter", "url(#glow)").attr("r", 16);
+})
+.on("mouseout", (event, d) => {
+tooltip.style("display", "none");
+d3.select(event.currentTarget).attr("filter", null).attr("r", 12);
+});
 
   const labels = container.append("g").attr("class", "labels")
     .selectAll("text")
@@ -125,7 +151,7 @@ d3.json("https://neo4-graph.onrender.com/api/graph").then(data => {
     .enter().append("text")
     .attr("dy", -10)
     .attr("text-anchor", "middle")
-    .text(d => d.labels?.includes("PlayerConsole") ? "PlayerConsole" : d.id)
+    .text(d => d.id)
     .style("font-size", "14px")
     .style("font-weight", "bold")
     .style("fill", "#0f0");
@@ -153,6 +179,20 @@ d3.json("https://neo4-graph.onrender.com/api/graph").then(data => {
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const edgeMap = new Map();
+  const sourceDropdown = document.getElementById("source-node");
+const targetDropdown = document.getElementById("target-node");
+
+nodes.forEach(node => {
+  const option1 = document.createElement("option");
+option1.value = node.id;
+option1.textContent = node.id;
+  sourceDropdown.appendChild(option1);
+
+  const option2 = document.createElement("option");
+option2.value = node.id;
+option2.textContent = node.id;
+  targetDropdown.appendChild(option2);
+});
 
   links.forEach(link => {
     const sourceId = link.source.id || link.source;
